@@ -20,7 +20,6 @@ DOCKERFILES=(
     "docker/Dockerfile.metrics-db"
     "docker/keycloak/Dockerfile"
     "metrics-service/Dockerfile"
-    "terraform/aws-ecs/grafana/Dockerfile"
 )
 
 ERRORS=0

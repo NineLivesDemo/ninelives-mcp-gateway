@@ -62,7 +62,7 @@ repos:
         name: Detect private keys
         description: Check for private SSH keys
         # Example/docs files contain PEM placeholders (BEGIN...\n...\nEND), not real keys.
-        exclude: ^(\.env\.example|docs/configuration\.md|terraform/aws-ecs/terraform\.tfvars\.example)$
+        exclude: ^(\.env\.example|docs/configuration\.md)$
 
       # Check for case conflicts in filenames
       - id: check-case-conflict
@@ -124,8 +124,8 @@ repos:
           - pydantic
         args: [--ignore-missing-imports, --no-strict-optional]
         # Scope type checking to the importable application packages. Script
-        # trees (api/, cli/, servers/, credentials-provider/, terraform/,
-        # infra/ lambdas, sample agents) reuse module basenames without
+        # trees (api/, cli/, servers/, credentials-provider/, sample agents)
+        # reuse module basenames without
         # __init__.py, which collide under a single mypy invocation.
         files: ^(registry|auth_server|metrics-service)/
         exclude: ^(tests/|scripts/)

@@ -393,13 +393,6 @@ registry:
       registrationHintEnabled: true # When true, registration UI pre-flights /check-duplicates and shows hint modal.
       scoreThreshold: "0.7" # Minimum similarity score (0.0..1.0) for advisory matches.
       maxSuggestions: "3" # Cap on advisory suggestions per request.
-    # OpenTelemetry direct OTLP push export configuration
-    # Standard OTel SDK var. Setting this activates the OTLP push exporter.
-    otelExporterOtlpEndpoint: "" # OTLP endpoint URL (e.g., http://otel-collector:4317)
-    otelOtlpEndpoint: "" # metrics-service OTLP endpoint (legacy; metrics-service removed in 1.26.0)
-    otelExporterOtlpHeaders: "" # OTLP headers (e.g., dd-api-key=YOUR_KEY)
-    otelOtlpExportIntervalMs: "30000" # Export interval in milliseconds
-    otelExporterOtlpMetricsTemporalityPreference: "cumulative" # cumulative or delta
     # OTel-native metric emission (Issue #1122)
     metricsLegacyHttpPost: false
     otelMetricExportIntervalMs: "15000"
@@ -569,9 +562,6 @@ auth-server:
     toolFilterAuditLogLevel: "INFO" # Audit log level for tool-prune events (DEBUG, INFO, WARNING)
     internalTokenTtlSeconds: "30" # Token lifetime (seconds); the replay-window cap (min 5)
     internalTokenLeewaySeconds: "5" # Clock-skew leeway (seconds) on token exp/iat
-  metrics:
-    # Standard OTel SDK var. Setting this activates the OTLP push exporter.
-    otelExporterOtlpEndpoint: "" # OTLP endpoint URL (e.g., http://otel-collector:4317)
   keycloak:
     enabled: true
     realm: *keycloakRealm

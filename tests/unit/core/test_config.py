@@ -33,7 +33,7 @@ class TestSettingsInstantiation:
         monkeypatch.setenv("SECRET_KEY", "test-key-for-defaults-at-least-32-bytes-long")
         monkeypatch.chdir(tmp_path)
 
-        settings = Settings()
+        settings = Settings(_env_file=None)
 
         assert settings.session_cookie_name == "mcp_gateway_session"
         assert settings.session_max_age_seconds == 60 * 60 * 8  # 8 hours
@@ -47,7 +47,7 @@ class TestSettingsInstantiation:
     def test_settings_embeddings_default_values(self) -> None:
         """Test embeddings-related default values."""
         # Act
-        settings = Settings()
+        settings = Settings(_env_file=None)
 
         # Assert - Embeddings settings
         assert settings.embeddings_provider == "sentence-transformers"
@@ -639,6 +639,7 @@ class TestSettingsEmbeddingsProviders:
         """Test sentence-transformers provider configuration."""
         # Act
         settings = Settings(
+            _env_file=None,
             embeddings_provider="sentence-transformers",
             embeddings_model_name="all-MiniLM-L6-v2",
             embeddings_model_dimensions=384,
@@ -656,6 +657,7 @@ class TestSettingsEmbeddingsProviders:
         """Test litellm provider configuration with API key."""
         # Act
         settings = Settings(
+            _env_file=None,
             embeddings_provider="litellm",
             embeddings_model_name="text-embedding-3-small",
             embeddings_model_dimensions=1536,
@@ -674,6 +676,7 @@ class TestSettingsEmbeddingsProviders:
         """Test litellm provider configuration for Amazon Bedrock."""
         # Act
         settings = Settings(
+            _env_file=None,
             embeddings_provider="litellm",
             embeddings_model_name="bedrock/amazon.titan-embed-text-v2:0",
             embeddings_model_dimensions=1024,

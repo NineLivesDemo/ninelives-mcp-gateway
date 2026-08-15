@@ -76,34 +76,6 @@ def _clear():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture(autouse=True)
-def _uninstrument_otel():
-    """Remove OpenTelemetry FastAPI auto-instrumentation for these tests.
-
-    ``registry.main`` auto-instruments the app at import time. The installed
-    ``opentelemetry-instrumentation-fastapi`` raises ``AttributeError`` on
-    ``_IncludedRouter`` when matching a route added via ``include_router`` for a
-    *successful* request, which is unrelated to the authorization behavior under
-    test. Uninstrumenting keeps these route-level authz assertions deterministic
-    regardless of the installed OTel version; the app is re-instrumented after
-    the test so global state is restored.
-    """
-    try:
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    except ImportError:
-        yield
-        return
-
-    was_instrumented = getattr(app, "_is_instrumented_by_opentelemetry", False)
-    if was_instrumented:
-        FastAPIInstrumentor.uninstrument_app(app)
-    try:
-        yield
-    finally:
-        if was_instrumented and not getattr(app, "_is_instrumented_by_opentelemetry", False):
-            FastAPIInstrumentor.instrument_app(app)
-
-
 @pytest.mark.unit
 class TestIamM2MReadsAdminOnly:
     """IAM/M2M list+get endpoints must reject non-admins (IAM metadata leak)."""

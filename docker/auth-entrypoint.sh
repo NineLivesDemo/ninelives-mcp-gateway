@@ -136,11 +136,5 @@ source .venv/bin/activate
 # hardens the tier-3 fallback. HTTPS/OAuth detection reads X-Forwarded-Proto from
 # the header directly, so it is unaffected. ::1 covers BIND_HOST=:: dual-stack.
 FORWARDED_ALLOW_IPS="127.0.0.1,::1"
-if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT}" ] && command -v opentelemetry-instrument >/dev/null 2>&1; then
-    echo "Using OTEL_EXPORTER_OTLP_ENDPOINT at ${OTEL_EXPORTER_OTLP_ENDPOINT}"
-    UVICORN_CMD="opentelemetry-instrument uvicorn server:app --host $BIND_HOST --port $AUTH_LISTEN_PORT --proxy-headers --forwarded-allow-ips=$FORWARDED_ALLOW_IPS"
-else
-    echo "OTEL_EXPORTER_OTLP_ENDPOINT not found, not using OTEL"
-    UVICORN_CMD="uvicorn server:app --host $BIND_HOST --port $AUTH_LISTEN_PORT --proxy-headers --forwarded-allow-ips=$FORWARDED_ALLOW_IPS"
-fi
+UVICORN_CMD="uvicorn server:app --host $BIND_HOST --port $AUTH_LISTEN_PORT --proxy-headers --forwarded-allow-ips=$FORWARDED_ALLOW_IPS"
 exec $UVICORN_CMD

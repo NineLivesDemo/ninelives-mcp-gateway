@@ -6,10 +6,9 @@ is declared here at module scope and imported wherever it's incremented.
 
 Why module scope: the OTel SDK lazily initializes the global MeterProvider on
 first call to ``opentelemetry.metrics.get_meter_provider()``. When the
-``opentelemetry-instrument`` wrapper has bootstrapped uvicorn (i.e.,
-``OTEL_EXPORTER_OTLP_ENDPOINT`` is set), the provider is real and instruments
-emit. When unset, ``get_meter_provider()`` returns a NoOp provider and
-instruments become no-ops; this is safe and zero-cost.
+Prometheus exporter is configured, the provider is real and instruments emit.
+When unset, ``get_meter_provider()`` returns a NoOp provider and instruments
+become no-ops; this is safe and zero-cost.
 
 Migration shape (issue #1122):
 - Path-2 events (replaces ``MetricsClient.emit_*``): ``registry_operation_*``,
@@ -43,34 +42,14 @@ logger = logging.getLogger(__name__)
 
 
 def _init_meter_provider_if_needed() -> None:
-    """Bootstrap the OTel SDK when ``opentelemetry-instrument`` did not.
-
-    Why this exists: when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is unset, the
-    docker entrypoint does NOT prefix uvicorn with ``opentelemetry-instrument``,
-    so the SDK is never auto-bootstrapped. Without a bootstrap, ``metrics.
-    get_meter_provider()`` returns a ``_ProxyMeterProvider`` and no exporter
-    runs. The Prometheus exporter env vars (``OTEL_EXPORTER_PROMETHEUS_HOST``
-    / ``_PORT``) are read by the SDK only when it initializes.
-
-    This helper covers the OTLP-disabled-but-Prometheus-pull-enabled case:
-    if the user has set ``OTEL_EXPORTER_PROMETHEUS_HOST``, install a
-    ``MeterProvider`` with a ``PrometheusMetricReader`` so the
-    :9464/metrics listener actually starts and the in-process counters
-    become scrape-able.
-
-    No-op when:
-    - ``OTEL_EXPORTER_PROMETHEUS_HOST`` is unset (operator hasn't opted in).
-    - A real ``MeterProvider`` is already installed (auto-instrumentation
-      did its job).
-    """
+    """Bootstrap the OTel SDK and Prometheus exporter when configured."""
     prom_host = os.getenv("OTEL_EXPORTER_PROMETHEUS_HOST", "").strip()
     if not prom_host:
         return
 
     current = metrics.get_meter_provider()
     current_name = type(current).__name__
-    # If a real SDK MeterProvider is already installed (e.g., by
-    # opentelemetry-instrument), don't fight it.
+    # If a real SDK MeterProvider is already installed, don't replace it.
     if "ProxyMeterProvider" not in current_name and "NoOp" not in current_name:
         return
 
@@ -133,9 +112,9 @@ _meter = metrics.get_meter("mcp-gateway-registry")
 # pruned vs the legacy payload to control time-series cardinality:
 #
 # - ``user_hash``: removed (per-user labels create unbounded series on large
-#   deployments). The user identity is still available in span attributes
-#   via auto-instrumentation for per-request debugging.
-# - ``request_id``: removed (already a span attribute).
+#   deployments). The user identity remains available in request and audit
+#   context for per-request debugging.
+# - ``request_id``: removed (already available in request and audit context).
 # - ``query`` text (tool_discovery): removed (unbounded). Log it instead.
 # - ``resource_id`` / ``user_id`` (registry_operation): removed (unbounded).
 # =============================================================================
@@ -628,7 +607,6 @@ def is_otel_enabled() -> bool:
     """Return True when OTel SDK is configured to export metrics.
 
     Used by middleware to decide whether to call the OTel emission path or
-    fall back to the legacy HTTP POST. Auto-instrumentation initializes the
-    SDK only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set.
+    fall back to the legacy HTTP POST.
     """
-    return bool(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip())
+    return bool(os.getenv("OTEL_EXPORTER_PROMETHEUS_HOST", "").strip())

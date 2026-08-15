@@ -66,9 +66,8 @@ def _normalize_cors_origin(value: str) -> str | None:
     return f"{scheme}://{host}"
 
 
-# Accepted values for STORAGE_BACKEND. Keep in sync with the Terraform allowlist
-# at terraform/aws-ecs/variables.tf (issue #955) so both layers reject the same
-# typos with the same messages.
+# Accepted values for STORAGE_BACKEND. Keep this list aligned with the supported
+# deployment configuration surfaces so all layers reject the same typos.
 ALLOWED_STORAGE_BACKENDS: frozenset[str] = frozenset(
     {
         "documentdb",

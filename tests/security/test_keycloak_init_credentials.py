@@ -22,7 +22,6 @@ def repo_root() -> Path:
 # Both copies of the Keycloak init script must satisfy the SA-9 invariants.
 INIT_SCRIPTS = [
     "keycloak/setup/init-keycloak.sh",
-    "terraform/aws-ecs/scripts/init-keycloak.sh",
 ]
 
 # Weak default-password patterns that must never reappear in the init scripts.
@@ -78,14 +77,6 @@ def test_primary_init_requires_admin_password(repo_root: Path):
     content = (repo_root / "keycloak/setup/init-keycloak.sh").read_text()
     assert 'if [ -z "$INITIAL_ADMIN_PASSWORD" ]' in content, (
         "keycloak/setup/init-keycloak.sh must guard on INITIAL_ADMIN_PASSWORD being set."
-    )
-
-
-def test_ecs_init_requires_lob_passwords(repo_root: Path):
-    """The ECS init script fails closed when LOB user passwords are unset."""
-    content = (repo_root / "terraform/aws-ecs/scripts/init-keycloak.sh").read_text()
-    assert 'if [ -z "$LOB1_USER_PASSWORD" ] || [ -z "$LOB2_USER_PASSWORD" ]' in content, (
-        "terraform/aws-ecs/scripts/init-keycloak.sh must guard on LOB user passwords."
     )
 
 

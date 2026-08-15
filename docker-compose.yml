@@ -262,12 +262,6 @@ services:
       # (Prometheus reaches it via service DNS; not exposed to other networks).
       - OTEL_EXPORTER_PROMETHEUS_HOST=${OTEL_EXPORTER_PROMETHEUS_HOST:-0.0.0.0}
       - OTEL_EXPORTER_PROMETHEUS_PORT=${OTEL_EXPORTER_PROMETHEUS_PORT:-9464}
-      # Standard OTel SDK env vars. Setting OTEL_EXPORTER_OTLP_ENDPOINT activates
-      # the OTLP push exporter (and triggers the entrypoint to wrap uvicorn with
-      # opentelemetry-instrument). Default empty: pull-only via :9464.
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
-      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
       - OTEL_SERVICE_NAME=mcp-gateway-registry
       # Keycloak configuration
       - AUTH_PROVIDER=${AUTH_PROVIDER:-cognito}
@@ -649,9 +643,6 @@ services:
       - OTEL_METRIC_EXPORT_INTERVAL_MS=${OTEL_METRIC_EXPORT_INTERVAL_MS:-15000}
       - OTEL_EXPORTER_PROMETHEUS_HOST=${OTEL_EXPORTER_PROMETHEUS_HOST:-0.0.0.0}
       - OTEL_EXPORTER_PROMETHEUS_PORT=${OTEL_EXPORTER_PROMETHEUS_PORT:-9464}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
-      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
       - OTEL_SERVICE_NAME=mcp-auth-server
       # Keycloak configuration
       - AUTH_PROVIDER=${AUTH_PROVIDER:-cognito}  # 'cognito' or 'keycloak'
@@ -834,9 +825,6 @@ services:
       - OTEL_METRIC_EXPORT_INTERVAL_MS=${OTEL_METRIC_EXPORT_INTERVAL_MS:-15000}
       - OTEL_EXPORTER_PROMETHEUS_HOST=${OTEL_EXPORTER_PROMETHEUS_HOST:-0.0.0.0}
       - OTEL_EXPORTER_PROMETHEUS_PORT=${OTEL_EXPORTER_PROMETHEUS_PORT:-9464}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
-      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
       - OTEL_SERVICE_NAME=mcp-mcpgw
     env_file:
       - path: ${MCP_EXTRA_ENV_DIR:-./extra_env}/mcpgw.env
@@ -891,45 +879,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # OpenTelemetry Collector (Issue #1122)
-  # Receives OTLP from registry/auth-server/mcpgw on :4317, re-exports as
-  # Prometheus on :8889, and logs everything via the debug exporter.
-  # Used for local verification; the OTLP push pipeline is also exercised
-  # on ECS via per-task ADOT sidecars and on EKS via the operator's own
-  # collector.
-  #
-  # For a graphical trace UI (Jaeger, Tempo, etc.), see the "Adding a
-  # graphical trace UI" section of docs/OBSERVABILITY.md for the small
-  # config additions you can drop in.
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.153.0
-    command: ["--config=/etc/otelcol-contrib/config.yaml"]
-    volumes:
-      - ./config/otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
-    # Services push OTLP over the docker network via service DNS
-    # (otel-collector:4317). Published on loopback only for local inspection.
-    ports:
-      # Loopback-only OTLP receivers so a locally-run (non-compose) service can
-      # still push to the collector via localhost. Compose services push over the
-      # container network (otel-collector:4317) regardless of these mappings.
-      - "${HOST_BIND_IP:-127.0.0.1}:4317:4317"   # OTLP gRPC (services push here)
-      - "${HOST_BIND_IP:-127.0.0.1}:4318:4318"   # OTLP HTTP
-      # 8889 (Prometheus exporter) is scraped container-to-container (see
-      # config/prometheus.yml job 'otel-collector' -> otel-collector:8889) and
-      # 13133 (health_check) is used only by the in-container healthcheck below,
-      # so neither needs a host mapping. Not published.
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    restart: unless-stopped
 
   # Prometheus for metrics collection
   prometheus:

@@ -108,7 +108,7 @@ def init_meter_provider_if_needed() -> None:
     No-op when:
     - ``OTEL_EXPORTER_PROMETHEUS_HOST`` is unset (operator hasn't opted in).
     - A real ``MeterProvider`` is already installed (e.g., by
-      ``opentelemetry-instrument`` doing its job).
+      a real MeterProvider already being configured.
     """
     prom_host = os.getenv("OTEL_EXPORTER_PROMETHEUS_HOST", "").strip()
     if not prom_host:

@@ -7,21 +7,6 @@ metadata:
     app.kubernetes.io/name: {{ .Values.app.name }}
     app.kubernetes.io/component: {{ .Values.app.name }}
 data:
-  {{- if .Values.app.otelExporterOtlpEndpoint }}
-  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.app.otelExporterOtlpEndpoint | quote }}
-  {{- end }}
-  {{- if .Values.app.otelOtlpEndpoint }}
-  OTEL_OTLP_ENDPOINT: {{ .Values.app.otelOtlpEndpoint | quote }}
-  {{- end }}
-  {{- if .Values.app.otelExporterOtlpHeaders }}
-  OTEL_EXPORTER_OTLP_HEADERS: {{ .Values.app.otelExporterOtlpHeaders | quote }}
-  {{- end }}
-  {{- if .Values.app.otelOtlpExportIntervalMs }}
-  OTEL_OTLP_EXPORT_INTERVAL_MS: {{ .Values.app.otelOtlpExportIntervalMs | quote }}
-  {{- end }}
-  {{- if .Values.app.otelExporterOtlpMetricsTemporalityPreference }}
-  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: {{ .Values.app.otelExporterOtlpMetricsTemporalityPreference | quote }}
-  {{- end }}
   # OTel-native metric emission (Issue #1122)
   METRICS_LEGACY_HTTP_POST: {{ .Values.app.metricsLegacyHttpPost | default false | quote }}
   {{- if .Values.app.otelMetricExportIntervalMs }}

@@ -181,11 +181,6 @@ spec:
               value: {{ .Values.metrics.exporterPrometheusHost | default "0.0.0.0" | quote }}
             - name: OTEL_EXPORTER_PROMETHEUS_PORT
               value: {{ .Values.metrics.exporterPrometheusPort | default "9464" | quote }}
-            {{- if .Values.metrics.otelExporterOtlpEndpoint }}
-            # Standard OTel SDK var: activates the OTLP push exporter when set.
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.metrics.otelExporterOtlpEndpoint | quote }}
-            {{- end }}
             # Audit durability guard (fail closed). The auth-server owns the
             # token-mint audit trail (who was issued which scoped token, when) --
             # the most forensically critical records. When true (default), the
@@ -218,7 +213,7 @@ spec:
             # only via IMDS) are NOT supported with this on. Chart-managed and
             # reserved so extraEnv cannot override it; set
             # app.disableEc2ImdsFallback=false if you must run on node-role creds.
-            # Kept in parity with terraform/aws-ecs + CDK auth-server env.
+            # Kept in parity with the Docker Compose auth-server environment.
             #
             # Gate renders UNLESS the flag is explicitly false, so a missing key
             # still renders — fails toward secure. Do NOT rewrite as

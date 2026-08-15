@@ -5,7 +5,7 @@ native OTel meter instruments. The tests are deliberately implementation-
 oriented: they validate that the adapter shape is correct so existing
 .labels(...).inc() / .set() call sites keep working without modification.
 
-When OTel is not configured (no OTEL_EXPORTER_OTLP_ENDPOINT), the global
+    When OTel is not configured (no Prometheus exporter host), the global
 meter provider returns a NoOp meter and instrument calls become no-ops.
 The tests verify that this no-op state is safe (no exceptions, no leaks).
 """
@@ -183,13 +183,13 @@ class TestRegistryMeterDeclarations:
         record_emission_path("otel")
         record_emission_path("legacy")
 
-    def test_is_otel_enabled_reads_env(self, monkeypatch):
+    def test_is_otel_enabled_reads_prometheus_env(self, monkeypatch):
         from registry.observability.meters import is_otel_enabled
 
-        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("OTEL_EXPORTER_PROMETHEUS_HOST", raising=False)
         assert is_otel_enabled() is False
 
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+        monkeypatch.setenv("OTEL_EXPORTER_PROMETHEUS_HOST", "0.0.0.0")
         assert is_otel_enabled() is True
 
 
@@ -268,7 +268,7 @@ class TestAuthServerMeterDeclarations:
 
 
 class TestNoOpBehaviorWhenOTelDisabled:
-    """When OTel SDK is uninitialized (no OTEL_EXPORTER_OTLP_ENDPOINT), instrument
+    """When OTel SDK is uninitialized (no Prometheus exporter), instrument
     calls must be safe no-ops. The OTel SDK provides this guarantee via the
     NoOpMeterProvider; these tests just verify our shims don't add any
     surprising failure modes on top of that.

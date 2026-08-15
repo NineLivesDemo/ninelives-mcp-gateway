@@ -189,26 +189,8 @@ def _initialize_deployment_metrics() -> None:
     ).set(1)
 
 
-def _endpoint_is_localhost(url: str) -> bool:
-    """Return True if the URL host is 127.0.0.1, ::1, or localhost."""
-    from urllib.parse import urlsplit
-
-    try:
-        host = urlsplit(url).hostname or ""
-    except ValueError:
-        return False
-    return host in {"localhost", "127.0.0.1", "::1"}
-
-
 def _log_otel_state() -> None:
-    """Emit a single startup log line describing OTel SDK + legacy-flag state.
-
-    Issue #1122: lets operators see at a glance whether OTel emission is
-    active, which OTLP endpoint is configured, the export interval, and
-    whether the legacy HTTP POST path is also enabled. Also warns at startup
-    if the OTLP endpoint uses HTTP to a non-localhost host (telemetry would
-    be unencrypted in transit).
-    """
+    """Emit a single startup log line describing metrics exporter state."""
     try:
         from opentelemetry import metrics
     except ImportError:
@@ -217,33 +199,26 @@ def _log_otel_state() -> None:
 
     provider = metrics.get_meter_provider()
     provider_name = type(provider).__name__
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    prom_host = os.getenv("OTEL_EXPORTER_PROMETHEUS_HOST", "")
     legacy = settings.metrics_legacy_http_post
     interval_ms = settings.otel_metric_export_interval_ms
 
     if "NoOp" in provider_name or "Default" in provider_name or "Proxy" in provider_name:
         logger.warning(
-            "OTel metrics DISABLED (provider=%s). Set OTEL_EXPORTER_OTLP_ENDPOINT "
-            "or OTEL_EXPORTER_PROMETHEUS_HOST to enable. Legacy HTTP POST: %s.",
+            "OTel metrics DISABLED (provider=%s). Set OTEL_EXPORTER_PROMETHEUS_HOST "
+            "to enable. Legacy HTTP POST: %s.",
             provider_name,
             legacy,
         )
         return
 
     logger.info(
-        "OTel metrics enabled (provider=%s, endpoint=%s, interval_ms=%s, legacy_http_post=%s)",
+        "OTel metrics enabled (provider=%s, prometheus_host=%s, interval_ms=%s, legacy_http_post=%s)",
         provider_name,
-        otlp_endpoint,
+        prom_host,
         interval_ms,
         legacy,
     )
-
-    if otlp_endpoint.startswith("http://") and not _endpoint_is_localhost(otlp_endpoint):
-        logger.warning(
-            "OTEL_EXPORTER_OTLP_ENDPOINT uses http:// to a non-localhost host (%s). "
-            "Telemetry will be UNENCRYPTED in transit. Use https:// in production.",
-            otlp_endpoint,
-        )
 
 
 # Stats and deployment detection functions moved to registry/api/system_routes.py
@@ -995,29 +970,6 @@ app = FastAPI(
         },
     ],
 )
-
-# Issue #1122: programmatic FastAPI auto-instrumentation. Emits HTTP
-# semantic-convention metrics (http.server.duration histogram + counter,
-# http.server.active_requests gauge) and spans for every route, with
-# attributes including http.route (template form, NOT the raw URL),
-# http.method, http.status_code. Works whether or not opentelemetry-
-# instrument is wrapping uvicorn at startup. Skipped when the wrapper has
-# already instrumented the app, to avoid the "already instrumented" warning
-# and any double-instrumentation side effects observed on ECS.
-try:
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-    if getattr(app, "_is_instrumented_by_opentelemetry", False):
-        logger.info(
-            "FastAPI already instrumented by opentelemetry-instrument; skipping programmatic instrument_app"
-        )
-    else:
-        FastAPIInstrumentor.instrument_app(app)
-        logger.info("Programmatic FastAPI auto-instrumentation enabled (issue #1122)")
-except ImportError:
-    logger.debug("opentelemetry-instrumentation-fastapi not installed; HTTP auto-metrics disabled")
-except Exception as exc:
-    logger.warning("FastAPI auto-instrumentation failed: %s", exc)
 
 # Add WWW-Authenticate middleware for MCP-facing 401s (RFC 9728 §5.1).
 # Must be added BEFORE CORS so the response-mutation step runs LAST in

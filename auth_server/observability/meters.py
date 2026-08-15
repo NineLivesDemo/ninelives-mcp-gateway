@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _init_meter_provider_if_needed() -> None:
-    """Bootstrap the OTel SDK when ``opentelemetry-instrument`` did not.
+    """Bootstrap the OTel SDK when the Prometheus exporter is configured.
 
     See registry/observability/meters.py for the full rationale. Mirrors
     the same logic for the auth-server process.
@@ -191,4 +191,4 @@ def record_emission_path(path: str) -> None:
 
 def is_otel_enabled() -> bool:
     """Return True when OTel SDK is configured to export metrics."""
-    return bool(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip())
+    return bool(os.getenv("OTEL_EXPORTER_PROMETHEUS_HOST", "").strip())

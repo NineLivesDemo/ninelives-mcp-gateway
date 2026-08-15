@@ -38,9 +38,8 @@ STARTUP_LOCK_INTERVAL_SECONDS = 60  # Don't send startup ping more than once per
 TELEMETRY_SIGNING_KEY = "mcp-registry-telemetry-v1-a7f3b9c2e1d4"
 TELEMETRY_TIMEOUT_SECONDS = 5  # HTTP request timeout
 
-# Cloud-detection method labels. Keep in sync with the regex allowlist in
-# terraform/telemetry-collector/lambda/collector/schemas.py
-# (_CLOUD_DETECTION_METHOD_PATTERN).
+# Cloud-detection method labels. Keep these values stable for telemetry
+# consumers and deployment classification.
 _DETECTION_METHOD_ENV = "env"
 _DETECTION_METHOD_DMI = "dmi"
 _DETECTION_METHOD_ECS_META = "ecs_meta"
@@ -377,8 +376,7 @@ def _detect_compute_platform() -> str:
 # prefixes must come first. Matching is first-hit-wins, case-insensitive,
 # against the left-trimmed, lowercased model name.
 #
-# NOTE: keep the set of result kinds in sync with the regex allowlist in
-# terraform/telemetry-collector/lambda/collector/schemas.py
+# NOTE: keep the set of result kinds stable for telemetry consumers
 # (StartupEvent.embeddings_backend_kind and HeartbeatEvent.embeddings_backend_kind).
 _BACKEND_KIND_PATTERNS: tuple[tuple[str, str], ...] = (
     ("bedrock/", "bedrock"),
