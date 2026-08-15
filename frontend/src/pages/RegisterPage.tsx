@@ -1,0 +1,1809 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeftIcon,
+  CloudArrowUpIcon,
+  DocumentTextIcon,
+  ServerIcon,
+  CpuChipIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
+  XMarkIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
+import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  type LocalRuntimeFormData,
+  initialLocalRuntime,
+  buildLocalRuntimeJson,
+  buildLocalRuntimeForm,
+} from '../utils/localRuntime';
+import LocalRuntimeFormPanel from '../components/LocalRuntimeFormPanel';
+import DuplicateCheckModal from '../components/DuplicateCheckModal';
+import { useDuplicateCheck } from '../hooks/useDuplicateCheck';
+import type { ExistingEntity } from '../types/duplicateCheck';
+import { FIELD, LABEL } from '../components/formFields';
+import { pathFromName } from '../utils/slug';
+import Button from '../components/Button';
+
+
+// Toast notification component
+interface ToastProps {
+  message: string;
+  type: 'success' | 'error';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed top-4 right-4 z-50 animate-slide-in-top">
+      <div className={`flex items-center p-4 rounded-lg shadow-lg border ${
+        type === 'success'
+          ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/50 dark:border-green-700 dark:text-green-200'
+          : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/50 dark:border-red-700 dark:text-red-200'
+      }`}>
+        {type === 'success' ? (
+          <CheckCircleIcon className="h-5 w-5 mr-3 flex-shrink-0" />
+        ) : (
+          <ExclamationCircleIcon className="h-5 w-5 mr-3 flex-shrink-0" />
+        )}
+        <p className="text-sm font-medium">{message}</p>
+        <button
+          onClick={onClose}
+          className="ml-3 flex-shrink-0 text-current opacity-70 hover:opacity-100"
+        >
+          <XMarkIcon className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+
+type RegistrationType = 'server' | 'agent';
+type RegistrationMode = 'form' | 'json';
+
+
+interface ServerFormData {
+  name: string;
+  description: string;
+  path: string;
+  deployment: 'remote' | 'local';
+  proxy_pass_url: string;
+  tags: string;
+  visibility: string;
+  repository_url: string;
+  mcp_endpoint: string;
+  sse_endpoint: string;
+  metadata: string;
+  auth_scheme: string;
+  auth_credential: string;
+  auth_header_name: string;
+  custom_headers: Array<{ name: string; value: string }>;
+  status: string;
+  provider_organization: string;
+  provider_url: string;
+  source_created_at: string;
+  source_updated_at: string;
+  local_runtime: LocalRuntimeFormData;
+}
+
+
+interface AgentFormData {
+  name: string;
+  description: string;
+  url: string;
+  path: string;
+  protocol_version: string;
+  version: string;
+  tags: string;
+  capabilities: string;
+  visibility: string;
+  allowed_groups: string;
+  repository_url: string;
+  streaming: boolean;
+  status: string;
+  provider_organization: string;
+  provider_url: string;
+  ans_agent_id: string;
+  source_created_at: string;
+  source_updated_at: string;
+  skills: Record<string, unknown>[];
+  skills_json: string;
+  default_input_modes: string[];
+  default_output_modes: string[];
+  security_schemes: Record<string, unknown> | null;
+  supported_protocol: string;
+  trust_level: string;
+  metadata: string;
+}
+
+
+interface FormErrors {
+  [key: string]: string;
+}
+
+
+const initialServerForm: ServerFormData = {
+  name: '',
+  description: '',
+  path: '',
+  deployment: 'remote',
+  proxy_pass_url: '',
+  tags: '',
+  visibility: 'public',
+  repository_url: '',
+  mcp_endpoint: '',
+  sse_endpoint: '',
+  metadata: '',
+  auth_scheme: 'none',
+  auth_credential: '',
+  auth_header_name: 'X-API-Key',
+  custom_headers: [],
+  status: 'active',
+  provider_organization: '',
+  provider_url: '',
+  source_created_at: '',
+  source_updated_at: '',
+  local_runtime: initialLocalRuntime,
+};
+
+
+const initialAgentForm: AgentFormData = {
+  name: '',
+  description: '',
+  url: '',
+  path: '',
+  protocol_version: '1.0',
+  version: '1.0.0',
+  tags: '',
+  capabilities: '',
+  visibility: 'public',
+  allowed_groups: '',
+  repository_url: '',
+  streaming: false,
+  status: 'active',
+  provider_organization: '',
+  provider_url: '',
+  ans_agent_id: '',
+  source_created_at: '',
+  source_updated_at: '',
+  skills: [],
+  skills_json: '',
+  default_input_modes: [],
+  default_output_modes: [],
+  security_schemes: null,
+  supported_protocol: 'other',
+  trust_level: 'community',
+  metadata: '',
+};
+
+
+const RegisterPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [registrationType, setRegistrationType] = useState<RegistrationType>('server');
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode>('form');
+  const [serverForm, setServerForm] = useState<ServerFormData>(initialServerForm);
+  const [agentForm, setAgentForm] = useState<AgentFormData>(initialAgentForm);
+  const [jsonContent, setJsonContent] = useState<string>('');
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [mcpRegistryNotice, setMcpRegistryNotice] = useState<string | null>(null);
+
+  // Registration deduplication. The hook owns the modal state, the
+  // sticky-disabled flag, the AbortController, and all of the network
+  // The hook owns AbortController, the hint-flag short-circuit, and
+  // the modal state. The page only owns the action callbacks
+  // (proceed / pick / cancel) that interact with the local form
+  // lifecycle. The modal currently surfaces from either the server
+  // tab or the agent tab; whichever submitted last sets
+  // ``activeRegisteringEntityType`` so the modal title and pluralization
+  // match.
+  const {
+    collisionWith,
+    advisoryMatches,
+    showModal: showDuplicateModal,
+    runCheck: runDuplicateCheck,
+    closeModal: closeDuplicateModal,
+  } = useDuplicateCheck();
+  const [activeRegisteringEntityType, setActiveRegisteringEntityType] =
+    useState<'mcp_server' | 'a2a_agent'>('mcp_server');
+
+
+  const generatePath = useCallback((name: string): string => pathFromName(name), []);
+
+
+  const handleServerNameChange = useCallback((name: string) => {
+    setServerForm(prev => ({
+      ...prev,
+      name,
+      path: prev.path || generatePath(name),
+    }));
+  }, [generatePath]);
+
+
+  const handleAgentNameChange = useCallback((name: string) => {
+    setAgentForm(prev => ({
+      ...prev,
+      name,
+      path: prev.path || generatePath(name),
+    }));
+  }, [generatePath]);
+
+
+  const validateServerForm = useCallback((): boolean => {
+    const newErrors: FormErrors = {};
+
+    if (!serverForm.name.trim()) {
+      newErrors.name = 'Server name is required';
+    }
+
+    if (!serverForm.description.trim()) {
+      newErrors.description = 'Description is required';
+    }
+
+    if (!serverForm.path.trim()) {
+      newErrors.path = 'Path is required';
+    } else if (!serverForm.path.startsWith('/')) {
+      newErrors.path = 'Path must start with /';
+    }
+
+    if (serverForm.deployment === 'remote') {
+      if (!serverForm.proxy_pass_url.trim()) {
+        newErrors.proxy_pass_url = 'Proxy URL is required for remote servers';
+      } else {
+        try {
+          new URL(serverForm.proxy_pass_url);
+        } catch {
+          newErrors.proxy_pass_url = 'Invalid URL format';
+        }
+      }
+    } else {
+      // Local deployment validation
+      const rt = serverForm.local_runtime;
+      if (!rt.package.trim()) {
+        newErrors.local_runtime_package =
+          rt.type === 'docker' ? 'Image reference is required'
+          : rt.type === 'command' ? 'Command path is required'
+          : 'Package name is required';
+      }
+      if (rt.image_digest && !rt.image_digest.startsWith('sha256:')) {
+        newErrors.local_runtime_image_digest = "image_digest must start with 'sha256:'";
+      }
+      // required_env keys must not also appear in env values
+      const envKeys = new Set(rt.envRows.filter(r => !r.required).map(r => r.key));
+      const overlap = rt.envRows.filter(r => r.required && envKeys.has(r.key));
+      if (overlap.length > 0) {
+        newErrors.local_runtime_env =
+          'A row cannot be both "required from user" and have a literal value with the same key';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [serverForm]);
+
+
+  const validateAgentForm = useCallback((): boolean => {
+    const newErrors: FormErrors = {};
+
+    if (!agentForm.name.trim()) {
+      newErrors.name = 'Agent name is required';
+    }
+
+    if (!agentForm.description.trim()) {
+      newErrors.description = 'Description is required';
+    }
+
+    if (!agentForm.url.trim()) {
+      newErrors.url = 'Agent URL is required';
+    } else {
+      try {
+        const url = new URL(agentForm.url);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          newErrors.url = 'URL must use HTTP or HTTPS protocol';
+        }
+      } catch {
+        newErrors.url = 'Invalid URL format';
+      }
+    }
+
+    if (agentForm.path && !agentForm.path.startsWith('/')) {
+      newErrors.path = 'Path must start with /';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [agentForm]);
+
+
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsed = JSON.parse(content);
+        setJsonContent(JSON.stringify(parsed, null, 2));
+
+        // Detect upstream MCP Registry server.json schema. The $schema field
+        // is optional in the spec, so also fire on structural canonical signals
+        // (reverse-DNS name, remotes[], packages[], or namespaced _meta).
+        const reverseDnsName = typeof parsed.name === 'string'
+          && /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/.test(parsed.name);
+        const hasNamespacedMeta = parsed._meta && typeof parsed._meta === 'object'
+          && Object.keys(parsed._meta).some(k => k.includes('/'));
+        const isMcpRegistrySchema = (typeof parsed.$schema === 'string'
+            && parsed.$schema.includes('modelcontextprotocol/registry'))
+          || Array.isArray(parsed.remotes)
+          || Array.isArray(parsed.packages)
+          || hasNamespacedMeta
+          || reverseDnsName;
+
+        if (isMcpRegistrySchema) {
+          setMcpRegistryNotice(
+            'This file uses the upstream MCP Registry server.json format. ' +
+            'Additional fields (repository, packages, remotes, _meta) will be stored ' +
+            'in the metadata field and preserved in the database.'
+          );
+          // Unpack the registry's own internal _meta block (if any) into
+          // bespoke top-level fields. Convention: any _meta key ending in
+          // '/internal' is treated as our own previously-exported state.
+          // Merge order: later blocks override earlier ones; existing
+          // top-level fields win over _meta (caller intent > round-trip state).
+          if (parsed._meta && typeof parsed._meta === 'object') {
+            const internalBlocks = Object.entries(parsed._meta)
+              .filter(([k]) => /\/internal$/.test(k))
+              .map(([, v]) => v)
+              .filter((v): v is Record<string, any> =>
+                v !== null && typeof v === 'object' && !Array.isArray(v));
+            const merged = internalBlocks.reduce<Record<string, any>>(
+              (acc, b) => ({ ...acc, ...b }), {});
+            for (const key of [
+              'path', 'tags', 'license', 'deployment', 'proxy_pass_url',
+              'supported_transports', 'auth_scheme', 'auth_provider',
+              'visibility', 'allowed_groups', 'status',
+              'provider_organization', 'provider_url',
+            ]) {
+              if (parsed[key] === undefined && merged[key] !== undefined) {
+                parsed[key] = merged[key];
+              }
+            }
+            // Nested metadata under _meta.<vendor>/internal.metadata is
+            // free-form vendor data — surface it to the form's metadata field
+            // unless the upload already supplied one.
+            if (parsed.metadata === undefined && merged.metadata !== undefined) {
+              parsed.metadata = merged.metadata;
+            }
+          }
+          // Transform upstream fields to populate the form correctly
+          if (!parsed.server_name && !parsed.name && parsed.title) {
+            parsed.name = parsed.title;
+          }
+          // Derive path from name if not explicitly set
+          if (!parsed.path && parsed.name) {
+            const slug = parsed.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            parsed.path = '/' + slug;
+          }
+          if (!parsed.proxy_pass_url && parsed.remotes?.[0]?.url) {
+            parsed.proxy_pass_url = parsed.remotes[0].url;
+          }
+          if (!parsed.deployment) {
+            parsed.deployment = parsed.remotes?.length ? 'remote' : 'local';
+          }
+          if (!parsed.auth_scheme && parsed.remotes?.[0]?.headers) {
+            const authHeader = parsed.remotes[0].headers.find(
+              (h: any) => h.name?.toLowerCase() === 'authorization'
+            );
+            if (authHeader?.value?.toLowerCase().includes('bearer')) {
+              parsed.auth_scheme = 'bearer';
+            }
+          }
+          // Preserve upstream-only fields in metadata
+          const upstreamSpec: any = {};
+          if (parsed.repository) upstreamSpec.repository = parsed.repository;
+          if (parsed.packages) upstreamSpec.packages = parsed.packages;
+          if (parsed.remotes) upstreamSpec.remotes = parsed.remotes;
+          if (parsed._meta) upstreamSpec._meta = parsed._meta;
+          if (parsed.version) upstreamSpec.version = parsed.version;
+          if (parsed.$schema) upstreamSpec.$schema = parsed.$schema;
+          upstreamSpec.original_name = parsed.name || parsed.title;
+
+          const existingMetadata = (typeof parsed.metadata === 'object' && parsed.metadata !== null)
+            ? parsed.metadata
+            : {};
+          parsed.metadata = { ...existingMetadata, mcp_registry_spec: upstreamSpec };
+        } else {
+          setMcpRegistryNotice(null);
+        }
+
+        // Auto-populate form fields from JSON
+        if (registrationType === 'server') {
+          // Helper to convert ISO timestamp to datetime-local format
+          const toDatetimeLocal = (isoString: string) => {
+            if (!isoString) return '';
+            try {
+              const date = new Date(isoString);
+              return date.toISOString().slice(0, 16);
+            } catch {
+              return '';
+            }
+          };
+
+          // Resolve deployment first; the form's validator branches on it
+          // (remote requires proxy_pass_url; local requires local_runtime).
+          const parsedDeployment: 'remote' | 'local' =
+            parsed.deployment === 'local' ? 'local' : 'remote';
+
+          setServerForm(prev => ({
+            ...prev,
+            name: parsed.server_name || parsed.name || prev.name,
+            description: parsed.description || prev.description,
+            path: parsed.path || prev.path,
+            deployment: parsedDeployment,
+            // Local servers must use auth_scheme='none' (the backend forces
+            // this; mirror it on the form so validation doesn't trip on a
+            // stale 'bearer'/'api_key' default).
+            auth_scheme: parsedDeployment === 'local' ? 'none' : (parsed.auth_scheme || prev.auth_scheme),
+            proxy_pass_url: parsed.proxy_pass_url || parsed.proxyPassUrl || prev.proxy_pass_url,
+            local_runtime: parsedDeployment === 'local'
+              ? buildLocalRuntimeForm(parsed.local_runtime)
+              : prev.local_runtime,
+            tags: Array.isArray(parsed.tags) ? parsed.tags.join(',') : (parsed.tags || prev.tags),
+            visibility: parsed.visibility || prev.visibility,
+            repository_url: parsed.repository_url || parsed.repositoryUrl || prev.repository_url,
+            mcp_endpoint: parsed.mcp_endpoint || parsed.mcpEndpoint || prev.mcp_endpoint,
+            sse_endpoint: parsed.sse_endpoint || parsed.sseEndpoint || prev.sse_endpoint,
+            metadata: parsed.metadata ? JSON.stringify(parsed.metadata, null, 2) : prev.metadata,
+            status: parsed.status || prev.status,
+            provider_organization: parsed.provider_organization || prev.provider_organization,
+            provider_url: parsed.provider_url || prev.provider_url,
+            source_created_at: toDatetimeLocal(parsed.source_created_at) || prev.source_created_at,
+            source_updated_at: toDatetimeLocal(parsed.source_updated_at) || prev.source_updated_at,
+          }));
+        } else {
+          // Helper to convert ISO timestamp to datetime-local format
+          const toDatetimeLocal = (isoString: string) => {
+            if (!isoString) return '';
+            try {
+              const date = new Date(isoString);
+              return date.toISOString().slice(0, 16);
+            } catch {
+              return '';
+            }
+          };
+
+          // Extract URL: top-level "url" or from "supportedInterfaces[0].url"
+          const agentUrl = parsed.url
+            || parsed.supportedInterfaces?.[0]?.url
+            || '';
+
+          // Extract protocol version from top-level or supportedInterfaces
+          const protoVersion = parsed.protocol_version
+            || parsed.protocolVersion
+            || parsed.supportedInterfaces?.[0]?.protocolVersion
+            || '';
+
+          setAgentForm(prev => ({
+            ...prev,
+            name: parsed.name || prev.name,
+            description: parsed.description || prev.description,
+            url: agentUrl || prev.url,
+            path: parsed.path || prev.path,
+            protocol_version: protoVersion || prev.protocol_version,
+            version: parsed.version || prev.version,
+            tags: Array.isArray(parsed.tags) ? parsed.tags.join(',') : (parsed.tags || prev.tags),
+            capabilities: parsed.capabilities ? JSON.stringify(parsed.capabilities) : prev.capabilities,
+            metadata: parsed.metadata ? JSON.stringify(parsed.metadata, null, 2) : prev.metadata,
+            visibility: parsed.visibility || prev.visibility,
+            allowed_groups: Array.isArray(parsed.allowedGroups || parsed.allowed_groups)
+              ? (parsed.allowedGroups || parsed.allowed_groups).join(', ')
+              : prev.allowed_groups,
+            repository_url: parsed.repository_url || parsed.repositoryUrl || prev.repository_url,
+            streaming: parsed.streaming || parsed.capabilities?.streaming || prev.streaming,
+            status: parsed.status || prev.status,
+            provider_organization: parsed.provider?.organization || parsed.provider_organization || prev.provider_organization,
+            provider_url: parsed.provider?.url || parsed.provider_url || prev.provider_url,
+            ans_agent_id: parsed.ans_agent_id || prev.ans_agent_id,
+            source_created_at: toDatetimeLocal(parsed.source_created_at) || prev.source_created_at,
+            source_updated_at: toDatetimeLocal(parsed.source_updated_at) || prev.source_updated_at,
+            skills: Array.isArray(parsed.skills) ? parsed.skills : prev.skills,
+            skills_json: Array.isArray(parsed.skills)
+              ? JSON.stringify(parsed.skills, null, 2)
+              : prev.skills_json,
+            default_input_modes: parsed.defaultInputModes || parsed.default_input_modes || prev.default_input_modes,
+            default_output_modes: parsed.defaultOutputModes || parsed.default_output_modes || prev.default_output_modes,
+            security_schemes: parsed.securitySchemes || parsed.security_schemes || prev.security_schemes,
+            supported_protocol: parsed.supportedProtocol || parsed.supported_protocol || prev.supported_protocol,
+          }));
+        }
+
+        setToast({ message: 'JSON file loaded successfully', type: 'success' });
+      } catch {
+        setToast({ message: 'Invalid JSON file', type: 'error' });
+      }
+    };
+    reader.readAsText(file);
+  }, [registrationType]);
+
+
+  const performServerRegistration = useCallback(async () => {
+    // Local deployments accept local_runtime as a JSON-encoded form field
+    // (same convention as metadata). See utils/localRuntime.ts.
+    const localRuntimeJson = serverForm.deployment === 'local'
+      ? buildLocalRuntimeJson(serverForm.local_runtime)
+      : null;
+
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('name', serverForm.name);
+      formData.append('description', serverForm.description);
+      formData.append('path', serverForm.path);
+      formData.append('deployment', serverForm.deployment);
+      if (localRuntimeJson) {
+        formData.append('local_runtime', localRuntimeJson);
+      }
+      // Remote-only fields — local servers must not include these.
+      if (serverForm.deployment === 'remote') {
+        formData.append('proxy_pass_url', serverForm.proxy_pass_url);
+        if (serverForm.mcp_endpoint) {
+          formData.append('mcp_endpoint', serverForm.mcp_endpoint);
+        }
+        if (serverForm.sse_endpoint) {
+          formData.append('sse_endpoint', serverForm.sse_endpoint);
+        }
+        if (serverForm.auth_scheme !== 'none') {
+          formData.append('auth_scheme', serverForm.auth_scheme);
+          if (serverForm.auth_credential) {
+            formData.append('auth_credential', serverForm.auth_credential);
+          }
+          if (serverForm.auth_scheme === 'api_key' && serverForm.auth_header_name) {
+            formData.append('auth_header_name', serverForm.auth_header_name);
+          }
+        }
+      }
+      formData.append('tags', serverForm.tags);
+      if (serverForm.metadata) {
+        formData.append('metadata', serverForm.metadata);
+      }
+      if (serverForm.custom_headers && serverForm.custom_headers.length > 0) {
+        formData.append('custom_headers', JSON.stringify(serverForm.custom_headers));
+      }
+
+      // Add new lifecycle and federation fields
+      if (serverForm.status) {
+        formData.append('status', serverForm.status);
+      }
+      if (serverForm.provider_organization) {
+        formData.append('provider_organization', serverForm.provider_organization);
+      }
+      if (serverForm.provider_url) {
+        formData.append('provider_url', serverForm.provider_url);
+      }
+      if (serverForm.source_created_at) {
+        formData.append('source_created_at', serverForm.source_created_at);
+      }
+      if (serverForm.source_updated_at) {
+        formData.append('source_updated_at', serverForm.source_updated_at);
+      }
+
+      await axios.post('/api/register', formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      setToast({ message: 'Server registered successfully!', type: 'success' });
+      setTimeout(() => navigate('/'), 1500);
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { detail?: string; error?: string; reason?: string } } };
+      const message = axiosError.response?.data?.error
+        || axiosError.response?.data?.reason
+        || axiosError.response?.data?.detail
+        || 'Failed to register server';
+      setToast({ message, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [serverForm, navigate]);
+
+
+  const performAgentRegistration = useCallback(async (): Promise<void> => {
+    let parsedSkills = agentForm.skills;
+    if (agentForm.skills_json.trim()) {
+      try {
+        parsedSkills = JSON.parse(agentForm.skills_json);
+      } catch {
+        setErrors(prev => ({ ...prev, skills_json: 'Invalid JSON format' }));
+        return;
+      }
+      if (!Array.isArray(parsedSkills)) {
+        setErrors(prev => ({ ...prev, skills_json: 'Skills must be a JSON array' }));
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    try {
+      const payload = {
+        name: agentForm.name,
+        description: agentForm.description,
+        url: agentForm.url,
+        path: agentForm.path || undefined,
+        protocolVersion: agentForm.protocol_version,
+        version: agentForm.version,
+        tags: agentForm.tags,
+        visibility: agentForm.visibility,
+        allowedGroups: agentForm.visibility === 'group-restricted'
+          ? agentForm.allowed_groups.split(',').map(g => g.trim()).filter(g => g)
+          : [],
+        streaming: agentForm.streaming,
+        status: agentForm.status || 'active',
+        provider: agentForm.provider_organization ? {
+          organization: agentForm.provider_organization,
+          url: agentForm.provider_url || agentForm.url,
+        } : undefined,
+        source_created_at: agentForm.source_created_at || undefined,
+        source_updated_at: agentForm.source_updated_at || undefined,
+        ans_agent_id: agentForm.ans_agent_id || undefined,
+        skills: parsedSkills.length > 0 ? parsedSkills : undefined,
+        defaultInputModes: agentForm.default_input_modes.length > 0 ? agentForm.default_input_modes : undefined,
+        defaultOutputModes: agentForm.default_output_modes.length > 0 ? agentForm.default_output_modes : undefined,
+        securitySchemes: agentForm.security_schemes || undefined,
+        supportedProtocol: agentForm.supported_protocol,
+        trustLevel: agentForm.trust_level,
+        ...(agentForm.metadata.trim() ? { metadata: JSON.parse(agentForm.metadata) } : {}),
+      };
+
+      await axios.post('/api/agents/register', payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      setToast({ message: 'Agent registered successfully!', type: 'success' });
+      setTimeout(() => navigate('/'), 1500);
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { detail?: string | { message?: string } } } };
+      let message = 'Failed to register agent';
+      if (axiosError.response?.data?.detail) {
+        if (typeof axiosError.response.data.detail === 'string') {
+          message = axiosError.response.data.detail;
+        } else if (axiosError.response.data.detail.message) {
+          message = axiosError.response.data.detail.message;
+        }
+      }
+      setToast({ message, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [agentForm, navigate]);
+
+
+  const handleServerSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+    if (!validateServerForm()) return;
+
+    setLoading(true);
+    setActiveRegisteringEntityType('mcp_server');
+    const outcome = await runDuplicateCheck({
+      entityType: 'mcp_server',
+      payload: {
+        name: serverForm.name.trim(),
+        description: serverForm.description.trim() || null,
+        proxy_pass_url:
+          serverForm.deployment === 'remote' && serverForm.proxy_pass_url
+            ? serverForm.proxy_pass_url.trim()
+            : null,
+        self_path: serverForm.path.trim() || null,
+      },
+    });
+    // performServerRegistration manages `loading` itself, so reset
+    // here before branching.
+    setLoading(false);
+
+    if (outcome.kind === 'show-modal') {
+      // Hook already set collisionWith / advisoryMatches / showModal.
+      return;
+    }
+    if (outcome.kind === 'cancelled') {
+      // The hook's in-flight check was aborted by a fresher submit or
+      // by the component unmounting. Either way the page must not
+      // proceed: a stale registration POST after navigation is the
+      // exact bug this branch prevents.
+      return;
+    }
+    if (outcome.notice) {
+      setToast({ message: outcome.notice, type: 'error' });
+    }
+    await performServerRegistration();
+  }, [loading, serverForm, validateServerForm, performServerRegistration, runDuplicateCheck]);
+
+
+  const handleDuplicateProceed = useCallback(async () => {
+    closeDuplicateModal();
+    if (activeRegisteringEntityType === 'mcp_server') {
+      await performServerRegistration();
+    } else {
+      await performAgentRegistration();
+    }
+  }, [
+    performServerRegistration,
+    performAgentRegistration,
+    closeDuplicateModal,
+    activeRegisteringEntityType,
+  ]);
+
+
+  const handleDuplicatePickExisting = useCallback((entity: ExistingEntity) => {
+    closeDuplicateModal();
+    // The advisory list is cross-entity: a server registration can
+    // surface a similar skill, etc. Pass `tab=` so the dashboard
+    // switches view filters to the entity's own list.
+    const tabByEntityType: Record<string, string> = {
+      mcp_server: 'servers',
+      a2a_agent: 'agents',
+      skill: 'skills',
+    };
+    const params = new URLSearchParams();
+    params.set('highlight', entity.path);
+    const tab = tabByEntityType[entity.entity_type];
+    if (tab) {
+      params.set('tab', tab);
+    }
+    navigate(`/?${params.toString()}`);
+  }, [navigate, closeDuplicateModal]);
+
+
+  const handleAgentSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+    if (!validateAgentForm()) return;
+
+    setLoading(true);
+    setActiveRegisteringEntityType('a2a_agent');
+    const outcome = await runDuplicateCheck({
+      entityType: 'a2a_agent',
+      payload: {
+        name: agentForm.name.trim(),
+        description: agentForm.description.trim() || null,
+        url: agentForm.url.trim() || null,
+        self_path: agentForm.path.trim() || null,
+      },
+    });
+    // performAgentRegistration manages `loading` itself, so reset
+    // here before branching.
+    setLoading(false);
+
+    if (outcome.kind === 'show-modal') {
+      return;
+    }
+    if (outcome.kind === 'cancelled') {
+      return;
+    }
+    if (outcome.notice) {
+      setToast({ message: outcome.notice, type: 'error' });
+    }
+    await performAgentRegistration();
+  }, [loading, agentForm, validateAgentForm, performAgentRegistration, runDuplicateCheck]);
+
+
+  // Field/label styling comes from the shared form-field primitives (identical
+  // to the previous local strings). errorClass keeps its text-sm/red-500 form.
+  const inputClass = FIELD;
+  const labelClass = LABEL;
+  const errorClass = "mt-1 text-sm text-red-500 dark:text-red-400";
+
+
+  const renderServerForm = () => (
+    <form onSubmit={handleServerSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Required Fields */}
+        <div className="md:col-span-2">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+            <span className="bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-2 py-1 rounded text-xs mr-2">Required</span>
+            Basic Information
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Server Name *</label>
+          <input
+            type="text"
+            required
+            className={`${inputClass} ${errors.name ? 'border-red-500' : ''}`}
+            value={serverForm.name}
+            onChange={(e) => handleServerNameChange(e.target.value)}
+            placeholder="e.g., My Custom Server"
+          />
+          {errors.name && <p className={errorClass}>{errors.name}</p>}
+        </div>
+
+        <div>
+          <label className={labelClass}>Path *</label>
+          <input
+            type="text"
+            required
+            className={`${inputClass} ${errors.path ? 'border-red-500' : ''}`}
+            value={serverForm.path}
+            onChange={(e) => setServerForm(prev => ({ ...prev, path: e.target.value }))}
+            placeholder="/my-server"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Auto-generated from name, but can be customized</p>
+          {errors.path && <p className={errorClass}>{errors.path}</p>}
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Deployment Type *</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`flex-1 px-4 py-2 rounded-md border ${
+                serverForm.deployment === 'remote'
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600'
+              }`}
+              onClick={() => setServerForm(prev => ({ ...prev, deployment: 'remote' }))}
+            >
+              Remote (HTTP)
+            </button>
+            <button
+              type="button"
+              className={`flex-1 px-4 py-2 rounded-md border ${
+                serverForm.deployment === 'local'
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600'
+              }`}
+              onClick={() => setServerForm(prev => ({ ...prev, deployment: 'local', auth_scheme: 'none' }))}
+            >
+              Local (stdio)
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Local servers run on the developer&apos;s machine via a launch recipe (npx, docker, uvx, command).
+            Registry stores the recipe — it does NOT execute the server.
+          </p>
+        </div>
+
+        {serverForm.deployment === 'remote' && (
+          <div className="md:col-span-2">
+            <label className={labelClass}>Proxy URL *</label>
+            <input
+              type="url"
+              className={`${inputClass} ${errors.proxy_pass_url ? 'border-red-500' : ''}`}
+              value={serverForm.proxy_pass_url}
+              onChange={(e) => setServerForm(prev => ({ ...prev, proxy_pass_url: e.target.value }))}
+              placeholder="http://localhost:8080"
+            />
+            {errors.proxy_pass_url && <p className={errorClass}>{errors.proxy_pass_url}</p>}
+          </div>
+        )}
+
+        {serverForm.deployment === 'local' && (
+          <div className="md:col-span-2">
+            <LocalRuntimeFormPanel
+              runtime={serverForm.local_runtime}
+              onChange={(next) => setServerForm(prev => ({ ...prev, local_runtime: next }))}
+              errors={{
+                package: errors.local_runtime_package,
+                image_digest: errors.local_runtime_image_digest,
+                env: errors.local_runtime_env,
+              }}
+              inputClass={inputClass}
+              labelClass={labelClass}
+              errorClass={errorClass}
+            />
+          </div>
+        )}
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Description *</label>
+          <textarea
+            required
+            className={`${inputClass} ${errors.description ? 'border-red-500' : ''}`}
+            rows={3}
+            value={serverForm.description}
+            onChange={(e) => setServerForm(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="Brief description of the server and its capabilities"
+          />
+            {errors.description && <p className={errorClass}>{errors.description}</p>}
+        </div>
+
+        {/* Optional Fields */}
+        <div className="md:col-span-2 mt-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+            <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded text-xs mr-2">Optional</span>
+            Additional Settings
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Tags</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={serverForm.tags}
+            onChange={(e) => setServerForm(prev => ({ ...prev, tags: e.target.value }))}
+            placeholder="tag1, tag2, tag3"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated list</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Visibility</label>
+          <select
+            className={inputClass}
+            value={serverForm.visibility}
+            onChange={(e) => setServerForm(prev => ({ ...prev, visibility: e.target.value }))}
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+            <option value="group-restricted">Group Restricted</option>
+          </select>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Repository URL</label>
+          <input
+            type="url"
+            className={inputClass}
+            value={serverForm.repository_url}
+            onChange={(e) => setServerForm(prev => ({ ...prev, repository_url: e.target.value }))}
+            placeholder="https://github.com/username/repo"
+          />
+        </div>
+
+        {/* Backend Authentication and HTTP-only endpoints — remote deployments only.
+            Local stdio servers handle auth via env vars on the developer's
+            machine, and have no proxy URL for /mcp or /sse path overrides. */}
+        {serverForm.deployment === 'remote' && (
+          <>
+            <div className="md:col-span-2 mt-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                <span className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-2 py-1 rounded text-xs mr-2">Optional</span>
+                Backend Authentication
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-4">
+                Configure credentials the gateway will use when proxying requests to your backend MCP server.
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Authentication Scheme</label>
+              <select
+                className={inputClass}
+                value={serverForm.auth_scheme}
+                onChange={(e) => {
+                  const newScheme = e.target.value;
+                  setServerForm(prev => ({
+                    ...prev,
+                    auth_scheme: newScheme,
+                    auth_credential: newScheme === 'none' ? '' : prev.auth_credential,
+                    auth_header_name: newScheme === 'api_key' ? prev.auth_header_name : 'X-API-Key',
+                  }));
+                }}
+              >
+                <option value="none">None</option>
+                <option value="bearer">Bearer Token</option>
+                <option value="api_key">API Key</option>
+              </select>
+            </div>
+
+            {serverForm.auth_scheme !== 'none' && (
+              <div>
+                <label className={labelClass}>
+                  {serverForm.auth_scheme === 'bearer' ? 'Bearer Token' : 'API Key'} *
+                </label>
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={serverForm.auth_credential}
+                  onChange={(e) => setServerForm(prev => ({ ...prev, auth_credential: e.target.value }))}
+                  placeholder={serverForm.auth_scheme === 'bearer' ? 'Enter bearer token' : 'Enter API key'}
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  This credential is stored securely and never displayed after saving.
+                </p>
+              </div>
+            )}
+
+            {serverForm.auth_scheme === 'api_key' && (
+              <div>
+                <label className={labelClass}>Header Name</label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={serverForm.auth_header_name}
+                  onChange={(e) => setServerForm(prev => ({ ...prev, auth_header_name: e.target.value }))}
+                  placeholder="X-API-Key"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  The HTTP header name used to send the API key (default: X-API-Key)
+                </p>
+              </div>
+            )}
+
+            <div className="md:col-span-2 mt-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded text-xs mr-2">Advanced</span>
+                Custom Endpoints
+              </h3>
+            </div>
+
+            <div>
+              <label className={labelClass}>MCP Endpoint (optional)</label>
+              <input
+                type="url"
+                className={inputClass}
+                value={serverForm.mcp_endpoint}
+                onChange={(e) => setServerForm(prev => ({ ...prev, mcp_endpoint: e.target.value }))}
+                placeholder="http://server.com/custom-mcp-path"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Override default /mcp endpoint path</p>
+            </div>
+
+            <div>
+              <label className={labelClass}>SSE Endpoint (optional)</label>
+              <input
+                type="url"
+                className={inputClass}
+                value={serverForm.sse_endpoint}
+                onChange={(e) => setServerForm(prev => ({ ...prev, sse_endpoint: e.target.value }))}
+                placeholder="http://server.com/custom-sse-path"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Override default /sse endpoint path</p>
+            </div>
+          </>
+        )}
+
+        {/* Additional Headers (remote only) */}
+        {serverForm.deployment === 'remote' && (
+          <div className="md:col-span-2 mt-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+              Additional Headers
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Fixed HTTP headers your MCP server requires beyond authentication.
+              Values are encrypted at rest and included in the Connect JSON.
+            </p>
+            {(serverForm.custom_headers || []).map((h, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="X-My-Header"
+                  value={h.name}
+                  onChange={(e) => {
+                    const updated = [...serverForm.custom_headers];
+                    updated[idx] = { ...updated[idx], name: e.target.value };
+                    setServerForm(prev => ({ ...prev, custom_headers: updated }));
+                  }}
+                  className={inputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="header value"
+                  value={h.value}
+                  onChange={(e) => {
+                    const updated = [...serverForm.custom_headers];
+                    updated[idx] = { ...updated[idx], value: e.target.value };
+                    setServerForm(prev => ({ ...prev, custom_headers: updated }));
+                  }}
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = serverForm.custom_headers.filter((_, i) => i !== idx);
+                    setServerForm(prev => ({ ...prev, custom_headers: updated }));
+                  }}
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 dark:text-red-400"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            {(serverForm.custom_headers || []).length < 10 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setServerForm(prev => ({
+                    ...prev,
+                    custom_headers: [...(prev.custom_headers || []), { name: '', value: '' }],
+                  }));
+                }}
+                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
+              >
+                + Add header
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Metadata (optional, JSON)</label>
+          <textarea
+            className={inputClass}
+            rows={3}
+            value={serverForm.metadata}
+            onChange={(e) => setServerForm(prev => ({ ...prev, metadata: e.target.value }))}
+            placeholder='{"team": "platform", "owner": "alice@example.com", "cost_center": "CC-1001"}'
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Custom key-value pairs for organization, compliance, or integration purposes</p>
+        </div>
+      </div>
+
+      {/* Lifecycle & Provider Information */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="md:col-span-2">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Lifecycle & Provider Information
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Status</label>
+          <select
+            className={inputClass}
+            value={serverForm.status}
+            onChange={(e) => setServerForm(prev => ({ ...prev, status: e.target.value }))}
+          >
+            <option value="active">Active</option>
+            <option value="beta">Beta</option>
+            <option value="draft">Draft</option>
+            <option value="deprecated">Deprecated</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Lifecycle status of this server</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Provider Organization</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={serverForm.provider_organization}
+            onChange={(e) => setServerForm(prev => ({ ...prev, provider_organization: e.target.value }))}
+            placeholder="ACME Inc."
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Organization providing this server</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Provider URL</label>
+          <input
+            type="url"
+            className={inputClass}
+            value={serverForm.provider_url}
+            onChange={(e) => setServerForm(prev => ({ ...prev, provider_url: e.target.value }))}
+            placeholder="https://example.com"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Provider's website or documentation URL</p>
+        </div>
+
+      </div>
+
+      <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <Button variant="secondary" onClick={() => navigate('/')}>
+          Cancel
+        </Button>
+        <Button variant="primary" type="submit" disabled={loading} className="px-6">
+          {loading ? 'Registering...' : 'Register Server'}
+        </Button>
+      </div>
+    </form>
+  );
+
+
+  const renderAgentForm = () => (
+    <form onSubmit={handleAgentSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Required Fields */}
+        <div className="md:col-span-2">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+            <span className="bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-2 py-1 rounded text-xs mr-2">Required</span>
+            Basic Information
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Agent Name *</label>
+          <input
+            type="text"
+            required
+            className={`${inputClass} ${errors.name ? 'border-red-500' : ''}`}
+            value={agentForm.name}
+            onChange={(e) => handleAgentNameChange(e.target.value)}
+            placeholder="e.g., My AI Agent"
+          />
+          {errors.name && <p className={errorClass}>{errors.name}</p>}
+        </div>
+
+        <div>
+          <label className={labelClass}>Path (auto-generated)</label>
+          <input
+            type="text"
+            className={`${inputClass} ${errors.path ? 'border-red-500' : ''}`}
+            value={agentForm.path}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, path: e.target.value }))}
+            placeholder="/my-agent"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave empty to auto-generate from name</p>
+          {errors.path && <p className={errorClass}>{errors.path}</p>}
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Agent URL *</label>
+          <input
+            type="url"
+            required
+            className={`${inputClass} ${errors.url ? 'border-red-500' : ''}`}
+            value={agentForm.url}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, url: e.target.value }))}
+            placeholder="https://my-agent.example.com"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">The endpoint URL where the agent can be reached</p>
+          {errors.url && <p className={errorClass}>{errors.url}</p>}
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Description *</label>
+          <textarea
+            required
+            className={`${inputClass} ${errors.description ? 'border-red-500' : ''}`}
+            rows={3}
+            value={agentForm.description}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="Describe what your agent does and its capabilities"
+          />
+          {errors.description && <p className={errorClass}>{errors.description}</p>}
+        </div>
+
+        {/* Supported Protocol */}
+        <div className="md:col-span-2">
+          <label className={labelClass}>
+            Supported Protocol <span className="text-red-500">*</span>
+          </label>
+          <div className="flex items-center gap-4 mt-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agentForm.supported_protocol === 'a2a'}
+                onChange={(e) => setAgentForm(prev => ({
+                  ...prev,
+                  supported_protocol: e.target.checked ? 'a2a' : 'other'
+                }))}
+                className="h-4 w-4 rounded border-gray-300 text-cyan-600
+                           focus:ring-cyan-500 dark:border-gray-600
+                           dark:bg-gray-700"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                This agent supports the A2A protocol
+              </span>
+            </label>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Check if this agent implements the
+            <a href="https://a2a-protocol.org/latest/specification/"
+               target="_blank" rel="noopener noreferrer"
+               className="text-cyan-600 hover:underline ml-1">
+              A2A (Agent-to-Agent) protocol
+            </a>.
+            The A2A agent card schema is used for all agents as a standardized representation.
+          </p>
+        </div>
+
+        {/* Optional Fields */}
+        <div className="md:col-span-2 mt-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+            <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded text-xs mr-2">Optional</span>
+            Additional Settings
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Protocol Version</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={agentForm.protocol_version}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, protocol_version: e.target.value }))}
+            placeholder="1.0"
+          />
+        </div>
+
+        <div>
+          <label className={labelClass}>Agent Version</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={agentForm.version}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, version: e.target.value }))}
+            placeholder="1.0.0"
+          />
+        </div>
+
+        <div>
+          <label className={labelClass}>Tags</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={agentForm.tags}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, tags: e.target.value }))}
+            placeholder="ai, assistant, nlp"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated list</p>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Custom Metadata (JSON, optional)</label>
+          <textarea
+            className={inputClass}
+            rows={3}
+            value={agentForm.metadata}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, metadata: e.target.value }))}
+            placeholder='{"team": "platform", "owner": "alice@example.com", "cost_center": "CC-1001"}'
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Custom key-value pairs for organization, compliance, or integration purposes
+          </p>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Skills (JSON array, optional)</label>
+          <textarea
+            className={`${inputClass} font-mono text-xs ${errors.skills_json ? 'border-red-500 dark:border-red-400' : ''}`}
+            rows={8}
+            value={agentForm.skills_json}
+            onChange={(e) => {
+              const value = e.target.value;
+              setAgentForm(prev => ({ ...prev, skills_json: value }));
+              if (errors.skills_json) {
+                setErrors(prev => {
+                  const next = { ...prev };
+                  delete next.skills_json;
+                  return next;
+                });
+              }
+            }}
+            placeholder='[{"id": "skill-1", "name": "My Skill", "description": "What this skill does"}]'
+          />
+          {errors.skills_json && (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.skills_json}</p>
+          )}
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Each skill needs at least: id, name, description.
+          </p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Visibility</label>
+          <select
+            className={inputClass}
+            value={agentForm.visibility}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, visibility: e.target.value }))}
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+            <option value="group-restricted">Group Restricted</option>
+          </select>
+        </div>
+
+        {agentForm.visibility === 'group-restricted' && (
+          <div>
+            <label className={labelClass}>Allowed Groups</label>
+            <input
+              type="text"
+              className={inputClass}
+              value={agentForm.allowed_groups}
+              onChange={(e) => setAgentForm(prev => ({ ...prev, allowed_groups: e.target.value }))}
+              placeholder="e.g. finance-team, engineering"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Comma-separated list of groups that can access this agent
+            </p>
+            {agentForm.allowed_groups.trim() === '' && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                At least one group is required for group-restricted visibility
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Trust Level */}
+        <div>
+          <label className={labelClass}>Trust Level</label>
+          <select
+            value={agentForm.trust_level}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, trust_level: e.target.value }))}
+            className={inputClass}
+          >
+            <option value="community">Community</option>
+            <option value="unverified">Unverified</option>
+            <option value="verified">Verified</option>
+            <option value="trusted">Trusted</option>
+          </select>
+        </div>
+
+        <div className="flex items-center">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+              checked={agentForm.streaming}
+              onChange={(e) => setAgentForm(prev => ({ ...prev, streaming: e.target.checked }))}
+            />
+            <span className="ml-2 text-sm text-gray-700 dark:text-gray-200">Supports streaming responses</span>
+          </label>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className={labelClass}>Repository URL</label>
+          <input
+            type="url"
+            className={inputClass}
+            value={agentForm.repository_url}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, repository_url: e.target.value }))}
+            placeholder="https://github.com/username/repo"
+          />
+        </div>
+      </div>
+
+      {/* Lifecycle & Provider Information */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="md:col-span-2">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Lifecycle & Provider Information
+          </h3>
+        </div>
+
+        <div>
+          <label className={labelClass}>Status</label>
+          <select
+            className={inputClass}
+            value={agentForm.status}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, status: e.target.value }))}
+          >
+            <option value="active">Active</option>
+            <option value="beta">Beta</option>
+            <option value="draft">Draft</option>
+            <option value="deprecated">Deprecated</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Lifecycle status of this agent</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Provider Organization</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={agentForm.provider_organization}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, provider_organization: e.target.value }))}
+            placeholder="ACME Inc."
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Organization providing this agent</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Provider URL</label>
+          <input
+            type="url"
+            className={inputClass}
+            value={agentForm.provider_url}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, provider_url: e.target.value }))}
+            placeholder="https://example.com"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Provider's website or documentation URL</p>
+        </div>
+
+        <div className="col-span-2">
+          <label className={labelClass}>ANS Agent ID (Optional)</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={agentForm.ans_agent_id}
+            onChange={(e) => setAgentForm(prev => ({ ...prev, ans_agent_id: e.target.value }))}
+            placeholder="ans://v1.0.0.myagent.example.com"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            If your agent is registered with GoDaddy ANS (Agent Name Service), enter the ANS Agent ID to display a verification badge.
+            The ID will be verified against the ANS registry during registration.
+          </p>
+        </div>
+
+      </div>
+
+      <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <Button variant="secondary" onClick={() => navigate('/')}>
+          Cancel
+        </Button>
+        <Button variant="primary" type="submit" disabled={loading} className="px-6">
+          {loading ? 'Registering...' : 'Register Agent'}
+        </Button>
+      </div>
+    </form>
+  );
+
+
+  const renderJsonUpload = () => (
+    <div className="space-y-6">
+      {/* File Upload Area */}
+      <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center">
+        <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
+        <div className="mt-4">
+          <label htmlFor="json-upload" className="cursor-pointer">
+            <span className="text-purple-600 dark:text-purple-400 hover:text-purple-500 font-medium">
+              Upload a file
+            </span>
+            <span className="text-gray-500 dark:text-gray-400"> or drag and drop</span>
+          </label>
+          <input
+            id="json-upload"
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+        </div>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {registrationType === 'server' ? 'modelcard.json' : 'agentcard.json'} (JSON format)
+        </p>
+      </div>
+
+      {/* JSON Preview */}
+      {jsonContent && (
+        <div>
+          <label className={labelClass}>JSON Preview</label>
+          <div className="relative">
+            <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 overflow-auto max-h-64 text-sm text-gray-800 dark:text-gray-200">
+              {jsonContent}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* MCP Registry Schema Notice */}
+      {mcpRegistryNotice && (
+        <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+          <div className="flex">
+            <InformationCircleIcon className="h-5 w-5 text-amber-500 flex-shrink-0" />
+            <div className="ml-3">
+              <h4 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                MCP Registry Format Detected
+              </h4>
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                {mcpRegistryNotice}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Box */}
+      <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex">
+          <InformationCircleIcon className="h-5 w-5 text-blue-400 flex-shrink-0" />
+          <div className="ml-3">
+            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              About JSON Upload
+            </h4>
+            <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
+              Upload a {registrationType === 'server' ? 'modelcard.json' : 'agentcard.json'} file to automatically populate the form fields.
+              You can then review and modify the values before submitting.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Render the appropriate form below */}
+      {jsonContent && (
+        <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Review and Submit
+          </h3>
+          {registrationType === 'server' ? renderServerForm() : renderAgentForm()}
+        </div>
+      )}
+
+      {/* Cancel button when no JSON loaded */}
+      {!jsonContent && (
+        <div className="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
+          <Button variant="secondary" onClick={() => navigate('/')}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+
+  // Check permissions
+  const canRegisterServer = (user?.ui_permissions?.register_service?.length ?? 0) > 0;
+  const canRegisterAgent = (user?.ui_permissions?.publish_agent?.length ?? 0) > 0;
+
+  if (!canRegisterServer && !canRegisterAgent) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6 text-center">
+          <ExclamationCircleIcon className="mx-auto h-12 w-12 text-yellow-400" />
+          <h3 className="mt-4 text-lg font-medium text-yellow-800 dark:text-yellow-200">
+            Permission Required
+          </h3>
+          <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+            You do not have permission to register servers or agents.
+            Please contact an administrator to request access.
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="mt-4 px-4 py-2 text-sm font-medium text-yellow-800 dark:text-yellow-200 bg-yellow-100 dark:bg-yellow-900 hover:bg-yellow-200 dark:hover:bg-yellow-800 rounded-md transition-colors"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      <DuplicateCheckModal
+        isOpen={showDuplicateModal}
+        onClose={closeDuplicateModal}
+        onProceed={handleDuplicateProceed}
+        onPickExisting={handleDuplicatePickExisting}
+        collisionWith={collisionWith}
+        advisoryMatches={advisoryMatches}
+        isLoading={loading}
+      />
+
+
+      {/* Header */}
+      <div className="mb-8">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
+        >
+          <ArrowLeftIcon className="h-4 w-4 mr-2" />
+          Back to Dashboard
+        </button>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          Register New Service
+        </h1>
+        <p className="mt-2 text-gray-600 dark:text-gray-400">
+          Register a new MCP server or A2A agent to the gateway registry.
+        </p>
+      </div>
+
+      {/* Registration Type Selector */}
+      <div className="mb-8">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
+          What would you like to register?
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            type="button"
+            disabled={!canRegisterServer}
+            onClick={() => setRegistrationType('server')}
+            className={`relative flex items-center p-4 border-2 rounded-lg transition-all ${
+              registrationType === 'server'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+            } ${!canRegisterServer ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <ServerIcon className={`h-8 w-8 ${
+              registrationType === 'server' ? 'text-purple-600' : 'text-gray-400'
+            }`} />
+            <div className="ml-4 text-left">
+              <p className={`font-medium ${
+                registrationType === 'server' ? 'text-purple-900 dark:text-purple-100' : 'text-gray-900 dark:text-white'
+              }`}>
+                MCP Server
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Model Context Protocol server
+              </p>
+            </div>
+            {registrationType === 'server' && (
+              <CheckCircleIcon className="absolute top-3 right-3 h-5 w-5 text-purple-600" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={!canRegisterAgent}
+            onClick={() => setRegistrationType('agent')}
+            className={`relative flex items-center p-4 border-2 rounded-lg transition-all ${
+              registrationType === 'agent'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+            } ${!canRegisterAgent ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <CpuChipIcon className={`h-8 w-8 ${
+              registrationType === 'agent' ? 'text-purple-600' : 'text-gray-400'
+            }`} />
+            <div className="ml-4 text-left">
+              <p className={`font-medium ${
+                registrationType === 'agent' ? 'text-purple-900 dark:text-purple-100' : 'text-gray-900 dark:text-white'
+              }`}>
+                A2A Agent
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Agent-to-Agent protocol agent
+              </p>
+            </div>
+            {registrationType === 'agent' && (
+              <CheckCircleIcon className="absolute top-3 right-3 h-5 w-5 text-purple-600" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Registration Mode Selector */}
+      <div className="mb-8">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
+          Registration Method
+        </label>
+        <div className="flex space-x-4">
+          <button
+            type="button"
+            onClick={() => setRegistrationMode('form')}
+            className={`flex items-center px-4 py-2 rounded-lg border transition-all ${
+              registrationMode === 'form'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <DocumentTextIcon className="h-5 w-5 mr-2" />
+            Quick Form
+          </button>
+          <button
+            type="button"
+            onClick={() => setRegistrationMode('json')}
+            className={`flex items-center px-4 py-2 rounded-lg border transition-all ${
+              registrationMode === 'json'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <CloudArrowUpIcon className="h-5 w-5 mr-2" />
+            JSON Upload
+          </button>
+        </div>
+      </div>
+
+      {/* Form Content */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        {registrationMode === 'form' ? (
+          registrationType === 'server' ? renderServerForm() : renderAgentForm()
+        ) : (
+          renderJsonUpload()
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+export default RegisterPage;

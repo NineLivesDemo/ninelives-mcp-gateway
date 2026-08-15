@@ -1,0 +1,62 @@
+{{- $existingSecret := .Values.mongodb.existingSecret | default .Values.global.existingMongoCredentialsSecret }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-mongodb
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-mongodb
+          image: public.ecr.aws/docker/library/python:3.13-slim
+          command: ['sh', '-c']
+          envFrom:
+            - secretRef:
+                name: {{ $existingSecret | default "mongo-credentials" }}
+          args:
+            - |
+              echo "Installing pymongo..."
+              pip install --no-cache-dir pymongo
+
+              echo "Waiting for MongoDB replica set to be ready..."
+              python3 /app/wait.py
+          volumeMounts:
+            - mountPath: /app/wait.py
+              name: script
+              subPath: wait.py
+      containers:
+        - name: job
+          image: public.ecr.aws/docker/library/python:3.13-slim
+          command: ["/bin/sh", "-c"]
+          args: [
+            "pip install --no-cache-dir pyyaml motor && python /app/script.py"
+          ]
+          envFrom:
+            - secretRef:
+                name: {{ $existingSecret | default "mongo-credentials" }}
+          volumeMounts:
+            - mountPath: /app/script.py
+              name: script
+              subPath: script.py
+            - mountPath: /app/registry-admins.json
+              name: script
+              subPath: registry-admins.json
+            - mountPath: /app/mcp-registry-admin.json
+              name: script
+              subPath: mcp-registry-admin.json
+            - mountPath: /app/mcp-servers-unrestricted-execute.json
+              name: script
+              subPath: mcp-servers-unrestricted-execute.json
+            - mountPath: /app/mcp-servers-unrestricted-read.json
+              name: script
+              subPath: mcp-servers-unrestricted-read.json
+            - mountPath: /app/federation-service.json
+              name: script
+              subPath: federation-service.json
+      restartPolicy: Never
+      volumes:
+        - name: script
+          configMap:
+            name: setup-mongodb
+  backoffLimit: 4
