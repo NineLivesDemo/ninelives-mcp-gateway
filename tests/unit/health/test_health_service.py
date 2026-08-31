@@ -383,6 +383,10 @@ async def test_health_service_check_server_endpoint_transport_aware_healthy(
         assert is_healthy is True
         assert status == HealthStatus.HEALTHY
 
+        assert mock_client.post.await_count == 2
+        initialized_payload = mock_client.post.await_args_list[0].kwargs["content"]
+        assert '"method": "notifications/initialized"' in initialized_payload
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -496,6 +500,8 @@ async def test_health_service_try_ping_without_auth_success(health_service):
     result = await health_service._try_ping_without_auth(mock_client, "http://localhost:8000/mcp")
 
     assert result is True
+    request_headers = mock_client.post.call_args.kwargs["headers"]
+    assert request_headers["Accept"] == "application/json, text/event-stream"
 
 
 @pytest.mark.unit

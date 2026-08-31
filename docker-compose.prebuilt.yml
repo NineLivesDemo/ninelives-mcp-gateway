@@ -133,6 +133,7 @@ services:
       - COGNITO_ENABLED=${COGNITO_ENABLED:-false}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - HEALTH_CHECK_INTERVAL_SECONDS=${HEALTH_CHECK_INTERVAL_SECONDS:-30}
+      - MCP_PROXY_TIMEOUT=${MCP_PROXY_TIMEOUT:-30}
       - SRE_GATEWAY_AUTH_TOKEN=${SRE_GATEWAY_AUTH_TOKEN}
       - ATLASSIAN_AUTH_TOKEN=${ATLASSIAN_AUTH_TOKEN}
       # Metrics configuration
@@ -585,7 +586,7 @@ services:
     # Operator dashboard: published on loopback only (no auth on Prometheus).
     ports:
       # Loopback-only: Prometheus UI is a local-dev convenience, not a public surface.
-      - "${HOST_BIND_IP:-127.0.0.1}:9090:9090"
+      - "${HOST_BIND_IP:-127.0.0.1}:9094:9094"
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus

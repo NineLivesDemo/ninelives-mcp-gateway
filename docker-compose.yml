@@ -246,6 +246,7 @@ services:
       # the SDK falls through to an IAM role or explicit AWS_* env vars.
       - AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE:-/dev/null}
       - HEALTH_CHECK_INTERVAL_SECONDS=${HEALTH_CHECK_INTERVAL_SECONDS:-30}
+      - MCP_PROXY_TIMEOUT=${MCP_PROXY_TIMEOUT:-30}
       - SRE_GATEWAY_AUTH_TOKEN=${SRE_GATEWAY_AUTH_TOKEN}
       - ATLASSIAN_AUTH_TOKEN=${ATLASSIAN_AUTH_TOKEN}
       # Metrics configuration

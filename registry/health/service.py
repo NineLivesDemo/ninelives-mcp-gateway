@@ -628,7 +628,11 @@ class HealthMonitoringService:
                 endpoint,
                 headers=init_headers,
                 json=initialize_payload,
-                timeout=httpx.Timeout(5.0),
+                # Streamable HTTP proxies may need to start a stdio child
+                # process before they can answer initialize. Use the same
+                # timeout as the gateway proxy hop instead of a hard-coded
+                # five-second limit.
+                timeout=httpx.Timeout(settings.mcp_proxy_timeout),
                 follow_redirects=True,
             )
 
@@ -677,7 +681,7 @@ class HealthMonitoringService:
         try:
             # Minimal headers without auth but with session ID (required by some servers)
             headers = {
-                "Accept": "application/json",
+                "Accept": "application/json, text/event-stream",
                 "Content-Type": "application/json",
                 "Mcp-Session-Id": str(uuid.uuid4()),
             }
@@ -879,6 +883,28 @@ class HealthMonitoringService:
 
                 # Step 2: Add session ID to headers for ping
                 headers["Mcp-Session-Id"] = session_id
+                # MCP requires the client notification before any other
+                # session request. Strict Streamable HTTP servers, including
+                # the Azure stdio proxy, reject ping when this is omitted.
+                initialized_payload = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                    "params": {},
+                }
+                initialized_response = await client.post(
+                    endpoint,
+                    headers=headers,
+                    content=json.dumps(initialized_payload),
+                    timeout=httpx.Timeout(settings.mcp_proxy_timeout),
+                    follow_redirects=True,
+                )
+                if initialized_response.status_code not in (200, 202):
+                    logger.warning(
+                        f"MCP initialized notification failed for {redact_url(endpoint)}: "
+                        f"status={initialized_response.status_code}"
+                    )
+                    return False, "unhealthy: initialized notification failed"
+
                 ping_payload = '{ "jsonrpc": "2.0", "id": "0", "method": "ping" }'
 
                 logger.info(f"[TRACE] Sending ping to endpoint: {redact_url(endpoint)}")

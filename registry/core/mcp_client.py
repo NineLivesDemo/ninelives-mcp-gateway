@@ -19,6 +19,7 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 
 from ..common.log_redaction import redact_url
+from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +296,9 @@ async def detect_server_transport(base_url: str) -> str:
     # Test streamable-http first (default preference)
     try:
         mcp_url = base_url.rstrip("/") + "/mcp/"
-        async with streamablehttp_client(url=mcp_url) as connection:
+        async with streamablehttp_client(
+            url=mcp_url, timeout=settings.mcp_proxy_timeout
+        ) as connection:
             logger.debug(f"Server at {redact_url(base_url)} supports streamable-http transport")
             return "streamable-http"
     except Exception as e:
@@ -306,7 +309,7 @@ async def detect_server_transport(base_url: str) -> str:
     # Fallback to SSE
     try:
         sse_url = base_url.rstrip("/") + "/sse"
-        async with sse_client(sse_url) as connection:
+        async with sse_client(sse_url, timeout=settings.mcp_proxy_timeout) as connection:
             logger.debug(f"Server at {redact_url(base_url)} supports SSE transport")
             return "sse"
     except Exception as e:
@@ -392,13 +395,17 @@ async def _get_tools_streamable_http(base_url: str, server_info: dict = None) ->
         headers = _build_headers_for_server(server_info, destination_url=mcp_url)
 
         try:
-            async with streamablehttp_client(url=mcp_url, headers=headers) as (
+            async with streamablehttp_client(
+                url=mcp_url, headers=headers, timeout=settings.mcp_proxy_timeout
+            ) as (
                 read,
                 write,
                 get_session_id,
             ):
                 async with ClientSession(read, write) as session:
-                    await asyncio.wait_for(session.initialize(), timeout=10.0)
+                    await asyncio.wait_for(
+                        session.initialize(), timeout=settings.mcp_proxy_timeout
+                    )
                     tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
                     result = _extract_tool_details(tools_response)
                     return result
@@ -431,13 +438,17 @@ async def _get_tools_streamable_http(base_url: str, server_info: dict = None) ->
             return None
         headers = _build_headers_for_server(server_info, destination_url=mcp_url)
         try:
-            async with streamablehttp_client(url=mcp_url, headers=headers) as (
+            async with streamablehttp_client(
+                url=mcp_url, headers=headers, timeout=settings.mcp_proxy_timeout
+            ) as (
                 read,
                 write,
                 get_session_id,
             ):
                 async with ClientSession(read, write) as session:
-                    await asyncio.wait_for(session.initialize(), timeout=10.0)
+                    await asyncio.wait_for(
+                        session.initialize(), timeout=settings.mcp_proxy_timeout
+                    )
                     tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
 
                     result = _extract_tool_details(tools_response)
@@ -458,13 +469,17 @@ async def _get_tools_streamable_http(base_url: str, server_info: dict = None) ->
             headers = _build_headers_for_server(server_info, destination_url=mcp_url)
             try:
                 logger.info(f"Trying streamable-http endpoint={redact_url(mcp_url)}")
-                async with streamablehttp_client(url=mcp_url, headers=headers) as (
+                async with streamablehttp_client(
+                    url=mcp_url, headers=headers, timeout=settings.mcp_proxy_timeout
+                ) as (
                     read,
                     write,
                     get_session_id,
                 ):
                     async with ClientSession(read, write) as session:
-                        await asyncio.wait_for(session.initialize(), timeout=10.0)
+                        await asyncio.wait_for(
+                            session.initialize(), timeout=settings.mcp_proxy_timeout
+                        )
                         tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
 
                         logger.info(f"MCP connection succeeded endpoint={redact_url(mcp_url)}")
@@ -531,9 +546,13 @@ async def _get_tools_sse(base_url: str, server_info: dict = None) -> list[dict] 
         httpx.AsyncClient.request = patched_request  # type: ignore[method-assign]  # legacy SSE monkeypatch
 
         try:
-            async with sse_client(mcp_server_url, headers=headers) as (read, write):
+            async with sse_client(
+                mcp_server_url, headers=headers, timeout=settings.mcp_proxy_timeout
+            ) as (read, write):
                 async with ClientSession(read, write, sampling_callback=None) as session:
-                    await asyncio.wait_for(session.initialize(), timeout=10.0)
+                    await asyncio.wait_for(
+                        session.initialize(), timeout=settings.mcp_proxy_timeout
+                    )
                     tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
 
                     return _extract_tool_details(tools_response)
@@ -738,14 +757,18 @@ async def get_mcp_connection_result(
 
     try:
         if transport == "streamable-http":
-            async with streamablehttp_client(url=mcp_url, headers=headers) as (
+            async with streamablehttp_client(
+                url=mcp_url, headers=headers, timeout=settings.mcp_proxy_timeout
+            ) as (
                 read,
                 write,
                 get_session_id,
             ):
                 async with ClientSession(read, write) as session:
                     # Capture the initialize result which contains serverInfo
-                    init_result = await asyncio.wait_for(session.initialize(), timeout=10.0)
+                    init_result = await asyncio.wait_for(
+                        session.initialize(), timeout=settings.mcp_proxy_timeout
+                    )
                     tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
 
                     tools = _extract_tool_details(tools_response)
@@ -782,10 +805,14 @@ async def get_mcp_connection_result(
                 return None
             headers = _build_headers_for_server(server_info, destination_url=sse_url)
 
-            async with sse_client(url=sse_url, headers=headers) as (read, write):
+            async with sse_client(
+                url=sse_url, headers=headers, timeout=settings.mcp_proxy_timeout
+            ) as (read, write):
                 async with ClientSession(read, write) as session:
                     # Capture the initialize result which contains serverInfo
-                    init_result = await asyncio.wait_for(session.initialize(), timeout=10.0)
+                    init_result = await asyncio.wait_for(
+                        session.initialize(), timeout=settings.mcp_proxy_timeout
+                    )
                     tools_response = await asyncio.wait_for(session.list_tools(), timeout=15.0)
 
                     tools = _extract_tool_details(tools_response)

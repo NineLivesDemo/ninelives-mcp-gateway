@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from registry.core.config import settings
 from registry.core.mcp_client import (
     MCPClientService,
     _build_headers_for_server,
@@ -548,6 +549,7 @@ async def test_get_tools_streamable_http_success(mock_server_info, mock_tools_re
             assert result is not None
             assert len(result) == 1
             assert result[0]["name"] == "test_tool"
+            assert mock_client.call_args.kwargs["timeout"] == settings.mcp_proxy_timeout
 
 
 @pytest.mark.unit
