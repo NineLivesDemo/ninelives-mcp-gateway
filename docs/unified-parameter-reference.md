@@ -735,9 +735,13 @@ Per-user egress OAuth: MCP servers act on a user's behalf with the user's own
 third-party token (e.g. GitHub), brokered by the gateway's OAuth AS facade and
 stored in a per-user vault. The registry owns the full set (secret store + OAuth
 engine); the auth-server needs only the feature flag, the internal vend URL, and
-the nginx marker secret. Backend: `secrets-manager` is the natural ECS choice;
-`openbao` is the EKS/Helm choice (Kubernetes auth, no static token). Helm reads
-non-secret vars from a discrete `registry-egress-config`
+the nginx marker secret. Production deployments should use an independently
+managed secret store selected through the provider-neutral backend interface.
+`secrets-manager` is the current AWS adapter, `openbao` is the current
+self-hosted adapter, and an Azure Key Vault adapter is planned for the current
+Azure deployment. The local Compose OpenBao instance is a development
+convenience, not a production lifecycle requirement. Helm reads non-secret vars
+from a discrete `registry-egress-config`
 / `auth-server-egress-config` ConfigMap; the marker secret is auto-generated and
 shared in the stack `shared-secret`.
 
@@ -761,10 +765,11 @@ shared in the stack `shared-secret`.
 | OpenBao token **(secret)** | `OPENBAO_TOKEN` | — | via secret | Static OpenBao/Vault token, root access to all vaulted egress credentials. **Required when `SECRET_STORE_BACKEND=openbao` with `OPENBAO_AUTH_METHOD=token`** — docker-compose references it as `${OPENBAO_TOKEN:?}`, so the stack refuses to start if unset. Not needed with `authMethod=kubernetes` (EKS), which uses the ServiceAccount instead. |
 | OpenBao role | `OPENBAO_ROLE` | — | `registry.egressAuth.openbao.role` | Kubernetes-auth role bound to the registry ServiceAccount.        |
 
-**Backend by surface:** ECS wires only the `secrets-manager` knobs (`OPENBAO_*`
-omitted); EKS/Helm defaults to `openbao` with `authMethod: kubernetes` and a
-self-bootstrapping standalone OpenBao (init/unseal/bootstrap Job + unseal
-sidecar, entirely Kubernetes-driven — no KMS, no Secrets Manager).
+**Backend by surface:** ECS wires the `secrets-manager` knobs by default; an
+external OpenBao-compatible deployment can be selected when required. EKS/Helm
+can use `openbao` with `authMethod: kubernetes`; the currently bundled
+self-bootstrapping OpenBao remains a local or standalone deployment option, not
+a requirement that the Registry and secret store share a lifecycle.
 
 ---
 

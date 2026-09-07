@@ -1,0 +1,310 @@
+{
+  "sessionId": "5bd87998-fca1-4b76-a51f-e09a24005152",
+  "createdUtc": "2026-08-31T17:58:03Z",
+  "lastModifiedUtc": "2026-08-31T18:12:08Z",
+  "currentPhase": null,
+  "completedPhases": [
+    "prereq"
+  ],
+  "statusSummary": "Prerequisite scan complete: Container Apps is feasible, but AWS SDK migration and one A2A startup fix block deployment.",
+  "intent": {
+    "userPrompt": "I am planning on deploying this project as an Azure service, ideally as a Container App if possible.",
+    "description": "Assess this repository and identify a feasible Azure deployment architecture, prioritizing Azure Container Apps.",
+    "refinedFromScan": true,
+    "scanDiscoveredFacts": [
+      "The repository is a Python 3.14, React/Vite, and TypeScript monorepo with Docker, Docker Compose, Helm, and GitHub Actions deployment surfaces.",
+      "The registry, auth server, metrics service, MCP servers, and A2A agents have container definitions that can map to Azure Container Apps.",
+      "The registry image combines nginx and uvicorn and exposes 8080, 8443, and 7860; Container Apps should use one ingress port and keep the raw API port internal.",
+      "MongoDB is the primary durable application store; Docker Compose also includes Keycloak, OpenBao, PostgreSQL, Prometheus, Grafana, and optional PingFederate.",
+      "Metrics and both A2A agents use SQLite or local filesystem state that is ephemeral or single-replica constrained on Container Apps.",
+      "Functional AWS dependencies remain in optional or default-enabled paths for Cognito, DocumentDB IAM, Secrets Manager, Bedrock embeddings, AgentCore, the CLI, and Strands-based A2A agents.",
+      "No Azure-specific azure.yaml, Bicep, or Terraform configuration was found; Azure infrastructure would be greenfield."
+    ]
+  },
+  "components": [
+    {
+      "name": "registry-api",
+      "path": ".",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI + nginx",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "auth-server",
+      "path": "auth_server",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "metrics-service",
+      "path": "metrics-service",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "frontend",
+      "path": "frontend",
+      "stack": {
+        "language": "TypeScript",
+        "framework": "React + Vite",
+        "version": "Node.js 26 build"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "PASS",
+        "completeness": "WARN",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "cli",
+      "path": "cli",
+      "stack": {
+        "language": "TypeScript",
+        "framework": "Node.js + Ink",
+        "version": "Node.js >=18.19"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "PASS",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "mcp-currenttime",
+      "path": "servers/currenttime",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "mcp-fake-tools",
+      "path": "servers/realserverfaketools",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "mcp-gateway",
+      "path": "servers/mcpgw",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      }
+    },
+    {
+      "name": "a2a-agents",
+      "path": "agents/a2a",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI + A2A SDK + Strands",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "needsFixes",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "FAIL"
+      }
+    }
+  ],
+  "azure": {
+    "subscriptionId": "24595c03-870c-4a3e-93b3-51ec93c246bf",
+    "subscriptionName": "Azure subscription 1",
+    "resourceGroup": "",
+    "region": ""
+  },
+  "repo": {
+    "remote": "git@github.com:NineLivesDemo/ninelives-mcp-gateway.git",
+    "lastScanCommit": "82f8c4b1b0f2953332e3fd99869ac4ecdb4a0199"
+  },
+  "app": {
+    "name": "mcp-gateway-registry"
+  },
+  "detectedInfra": [
+    "dockerfile",
+    "docker-compose",
+    "helm",
+    "github-actions"
+  ],
+  "detectedServices": [
+    {
+      "type": "mongodb",
+      "version": "8.2",
+      "source": "compose"
+    },
+    {
+      "type": "postgresql",
+      "version": "16-alpine",
+      "source": "compose"
+    },
+    {
+      "type": "openbao",
+      "version": "2.5.5",
+      "source": "compose"
+    },
+    {
+      "type": "keycloak",
+      "version": "25.0",
+      "source": "compose"
+    },
+    {
+      "type": "prometheus",
+      "version": "v3.11.3",
+      "source": "compose"
+    },
+    {
+      "type": "grafana",
+      "version": "12.3.1",
+      "source": "compose"
+    },
+    {
+      "type": "pingfederate",
+      "version": "13.0.2",
+      "source": "compose"
+    },
+    {
+      "type": "sqlite",
+      "source": "code"
+    }
+  ],
+  "cloudSdkFindings": [
+    {
+      "id": "CLOUD-SDK-REGISTRY-AWS",
+      "component": "registry-api",
+      "dependency": "boto3 / botocore",
+      "optional": true,
+      "azureEquivalent": "MongoDB Atlas or Cosmos DB for MongoDB, Microsoft Entra ID, Azure Key Vault, and Azure Container Apps managed identity",
+      "requiredAction": "Swap or explicitly disable DocumentDB IAM, Cognito, Secrets Manager, and AgentCore paths before Azure deployment."
+    },
+    {
+      "id": "CLOUD-SDK-REGISTRY-BEDROCK",
+      "component": "registry-api",
+      "dependency": "langchain-aws and Bedrock LiteLLM model paths",
+      "optional": true,
+      "azureEquivalent": "Azure OpenAI or another OpenAI-compatible embedding endpoint configured through LiteLLM",
+      "requiredAction": "Use a non-Bedrock embedding provider and remove or disable AWS credential-dependent model configuration."
+    },
+    {
+      "id": "CLOUD-SDK-AUTH-COGNITO",
+      "component": "auth-server",
+      "dependency": "boto3 Cognito integration",
+      "optional": true,
+      "azureEquivalent": "Microsoft Entra ID or Entra External ID",
+      "requiredAction": "Select and configure Entra ID or retain a separately hosted production IdP; do not leave the Cognito default path enabled."
+    },
+    {
+      "id": "CLOUD-SDK-CLI-BEDROCK",
+      "component": "cli",
+      "dependency": "@aws-sdk/client-bedrock-runtime",
+      "optional": true,
+      "azureEquivalent": "Azure OpenAI or another supported model API",
+      "requiredAction": "Replace the Bedrock CLI model client or exclude the optional Bedrock command from the Azure release."
+    },
+    {
+      "id": "CLOUD-SDK-A2A-STRANDS",
+      "component": "a2a-agents",
+      "dependency": "strands-agents and bedrock-agentcore-starter-toolkit",
+      "optional": true,
+      "azureEquivalent": "Azure OpenAI-compatible agent implementation hosted in Container Apps",
+      "requiredAction": "Replace or adapt the AWS-oriented model/runtime integration, or disable the A2A images for the first Azure deployment."
+    }
+  ],
+  "overrides": [
+    {
+      "key": "targetPlatform",
+      "value": "Azure Container Apps",
+      "reason": "User explicitly prefers Container Apps when feasible."
+    }
+  ],
+  "readiness": {
+    "status": "needsFixes",
+    "overallHealth": "blocked",
+    "evaluationMode": "static-only",
+    "cloudSdkMigrationRequired": true
+  },
+  "routeToSkill": "azure-cloud-migrate",
+  "routeReason": "cloud-sdk-migration",
+  "scan": {
+    "scannedAtUtc": "2026-08-31T18:12:08Z",
+    "manifestCount": 9,
+    "azureInfrastructurePresent": false
+  }
+}

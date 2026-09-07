@@ -1,0 +1,786 @@
+{
+  "components": [
+    {
+      "name": "registry-api",
+      "path": ".",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI + nginx",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked Python dependency tree contains native and large scientific packages including numpy, scipy, scikit-learn, torch, and cryptography.",
+          "fix": "Build this image in Azure Container Registry and use a paid Container Apps profile; consider a remote embedding provider to reduce image size."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "registry/main.py, the Docker entrypoint, declared dependencies, exposed ports, and the /health route are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The image combines nginx and uvicorn, exposes three ports, and writes generated configuration, logs, scans, certificates, and models to local paths.",
+          "fix": "Use 8080 as the only Container Apps ingress target, keep 7860 internal, and provide durable storage or move generated state to managed services."
+        }
+      ]
+    },
+    {
+      "name": "auth-server",
+      "path": "auth_server",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked dependency tree contains cryptography and grpcio native packages.",
+          "fix": "Build the image in Azure Container Registry rather than relying on a free-tier build environment."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "auth_server/server.py, the entrypoint, environment configuration, port 8888, and the /health route are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The service is container-ready but its default bind and provider configuration are designed around an internal Compose network and optional Cognito paths.",
+          "fix": "Keep the auth port internal, set explicit Container Apps service URLs, and select an Azure-compatible identity provider."
+        }
+      ]
+    },
+    {
+      "name": "metrics-service",
+      "path": "metrics-service",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The lockfile contains grpcio as a native dependency.",
+          "fix": "Build the image in Azure Container Registry and retain the locked dependency set."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "app/main.py, automatic schema migration logic, port 8890, and the /health route are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The service stores metrics in SQLite at /var/lib/sqlite/metrics.db, which is not durable or safe for horizontal scaling on Container Apps.",
+          "fix": "Use Azure Files for a deliberately single-replica deployment or migrate metrics persistence to a managed database."
+        }
+      ]
+    },
+    {
+      "name": "frontend",
+      "path": "frontend",
+      "stack": {
+        "language": "TypeScript",
+        "framework": "React + Vite",
+        "version": "Node.js 26 build"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "PASS",
+        "completeness": "WARN",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "PASS",
+          "summary": "package.json, package-lock.json, the Vite build script, tsconfig, and source entrypoint are present.",
+          "fix": null
+        },
+        {
+          "category": "completeness",
+          "verdict": "WARN",
+          "summary": "index.html references /favicon.ico, but frontend/public contains logo.png and rum.js rather than favicon.ico.",
+          "fix": "Add frontend/public/favicon.ico or remove the broken favicon reference."
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The frontend is embedded in the registry image and includes localhost fallback behavior for development authentication URLs.",
+          "fix": "Supply production runtime configuration and keep the frontend as part of the registry image unless it is intentionally split into a static hosting service."
+        }
+      ]
+    },
+    {
+      "name": "cli",
+      "path": "cli",
+      "stack": {
+        "language": "TypeScript",
+        "framework": "Node.js + Ink",
+        "version": "Node.js >=18.19"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "PASS",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "PASS",
+          "summary": "package.json, package-lock.json, the TypeScript build script, bin/registry.js, and the Node engine constraint are present.",
+          "fix": null
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "The CLI has a declared executable entrypoint and is documented as a client tool.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The Ink CLI is a client artifact, not an independently hosted web service or Container App.",
+          "fix": "Publish it as an npm or container client artifact and exclude it from the hosted service topology."
+        }
+      ]
+    },
+    {
+      "name": "mcp-currenttime",
+      "path": "servers/currenttime",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked FastMCP dependency tree contains cryptography as a native package.",
+          "fix": "Build the image in Azure Container Registry."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "server.py, its manifest and lockfile, and the FastMCP HTTP server configuration are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The generic image uses a TCP probe rather than an HTTP health endpoint.",
+          "fix": "Configure an Azure Container Apps TCP probe or add an HTTP health route before exposing the service."
+        }
+      ]
+    },
+    {
+      "name": "mcp-fake-tools",
+      "path": "servers/realserverfaketools",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked FastMCP dependency tree contains cryptography as a native package.",
+          "fix": "Build the image in Azure Container Registry."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "server.py, its manifest and lockfile, and the FastMCP server configuration are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The sample service has only the generic TCP probe and is not required for the production registry path.",
+          "fix": "Treat it as an optional internal test service and configure a TCP or HTTP probe if it is deployed."
+        }
+      ]
+    },
+    {
+      "name": "mcp-gateway",
+      "path": "servers/mcpgw",
+      "stack": {
+        "language": "Python",
+        "framework": "FastMCP",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "ready",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "WARN"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked FastMCP dependency tree contains cryptography as a native package.",
+          "fix": "Build the image in Azure Container Registry."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "server.py, its manifest and lockfile, the /health route, and port 8003 configuration are present.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "WARN",
+          "summary": "The gateway defaults to a Compose-only registry hostname and must reach the registry through Container Apps internal DNS or an explicit endpoint.",
+          "fix": "Set REGISTRY_BASE_URL to the deployed registry endpoint and keep the gateway ingress private unless it is intentionally public."
+        }
+      ]
+    },
+    {
+      "name": "a2a-agents",
+      "path": "agents/a2a",
+      "stack": {
+        "language": "Python",
+        "framework": "FastAPI + A2A SDK + Strands",
+        "version": "3.14"
+      },
+      "readiness": {
+        "status": "needsFixes",
+        "fixes": []
+      },
+      "verdicts": {
+        "build": "WARN",
+        "completeness": "PASS",
+        "deployability": "FAIL"
+      },
+      "findings": [
+        {
+          "category": "build",
+          "verdict": "WARN",
+          "summary": "The locked A2A dependency tree contains cryptography and AWS-oriented Strands dependencies.",
+          "fix": "Build in Azure Container Registry and replace or disable the AWS-oriented model/runtime path."
+        },
+        {
+          "category": "completeness",
+          "verdict": "PASS",
+          "summary": "Both agent variants have Dockerfiles, FastAPI entrypoints, port 9000, /ping and /api/health routes, and local database modules.",
+          "fix": null
+        },
+        {
+          "category": "deployability",
+          "verdict": "FAIL",
+          "summary": "Both A2A Dockerfiles use CMD uv run --no-sync; the static deployability rule requires a direct virtual-environment command to avoid runtime wrapper and permission/startup failures.",
+          "fix": "Replace the Docker CMD with the direct /app/.venv/bin/python server.py or agent.py command, then re-evaluate both images."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "id": "W-NATIVE-REGISTRY",
+      "component": "registry-api",
+      "axis": "build",
+      "summary": "The registry lockfile contains native and large scientific packages.",
+      "detail": "numpy, scipy, scikit-learn, torch, Pillow, and cryptography increase image size and build time; the registry image is not suitable for an F1-style free deployment.",
+      "fix": "Build in Azure Container Registry and use a paid Container Apps profile; consider a remote embedding provider.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-MULTIPROCESS-REGISTRY",
+      "component": "registry-api",
+      "axis": "deployability",
+      "summary": "The registry image runs nginx and uvicorn together.",
+      "detail": "The entrypoint starts uvicorn in the background and keeps the container alive with tail -f /dev/null. Container Apps can run this image, but process failure and scaling behavior require deliberate probe and supervision configuration.",
+      "fix": "Retain the combined image only with explicit liveness/readiness probes, or split the edge proxy and API into separate services.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-REGISTRY-PORTS",
+      "component": "registry-api",
+      "axis": "deployability",
+      "summary": "The registry image exposes multiple ports.",
+      "detail": "nginx listens on 8080 and 8443 while uvicorn listens on 7860. Container Apps ingress should expose one intended port and must not expose the raw API port.",
+      "fix": "Use port 8080 as the only ingress target and configure the /health probe through nginx.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-REGISTRY-LOCAL-STATE",
+      "component": "registry-api",
+      "axis": "deployability",
+      "summary": "The registry writes runtime state to the container filesystem.",
+      "detail": "Generated nginx mappings, logs, certificates, security scans, skill scans, agent scans, and local embedding models are stored under /app and /var/log.",
+      "fix": "Move durable artifacts to MongoDB, Azure Blob Storage, Azure Files, or a dedicated managed service before enabling scale-out.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-COMPOSE-HOSTNAMES-REGISTRY",
+      "component": "registry-api",
+      "axis": "deployability",
+      "summary": "Registry configuration uses Docker Compose service names as hostnames.",
+      "detail": "Defaults include mongodb, metrics-service, keycloak, openbao, and registry-oriented internal URLs that do not resolve outside the Compose network.",
+      "fix": "Set each URL and database host to an Azure managed endpoint or Container Apps internal DNS name.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-LOCALHOST-URL-REGISTRY",
+      "component": "registry-api",
+      "axis": "deployability",
+      "summary": "Development localhost defaults remain in registry deployment configuration.",
+      "detail": "REGISTRY_URL and Keycloak external URL fall back to localhost in Compose and development configuration.",
+      "fix": "Set production HTTPS URLs and trusted host allowlists explicitly in the Azure deployment configuration.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-NATIVE-AUTH",
+      "component": "auth-server",
+      "axis": "build",
+      "summary": "The auth lockfile contains native packages.",
+      "detail": "cryptography and grpcio are present in the locked dependency tree.",
+      "fix": "Build the auth image in Azure Container Registry.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-AUTH-BIND",
+      "component": "auth-server",
+      "axis": "deployability",
+      "summary": "The auth service defaults to binding all IPv4 interfaces inside its container.",
+      "detail": "This is acceptable only when the Container Apps ingress is private and the service is not assigned public ingress; an accidental target-port exposure would bypass the intended edge.",
+      "fix": "Deploy auth-server with internal ingress only and restrict its network exposure to the registry edge.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-IDP-PROVIDER-DEFAULT",
+      "component": "auth-server",
+      "axis": "deployability",
+      "summary": "The current Compose defaults select an AWS Cognito provider path.",
+      "detail": "Azure deployment requires an explicit Entra ID or separately hosted production Keycloak decision; the Cognito path is not an Azure-native default.",
+      "fix": "Set an Azure-compatible identity provider and configure its issuer, audience, redirect URLs, and group mappings.",
+      "fixPhase": "deploy-gate"
+    },
+    {
+      "id": "W-COMPOSE-HOSTNAMES-AUTH",
+      "component": "auth-server",
+      "axis": "deployability",
+      "summary": "Auth configuration references Compose-only service names.",
+      "detail": "The auth entrypoint and Compose environment use mongodb, keycloak, metrics-service, and registry hostnames.",
+      "fix": "Replace those values with managed endpoints or internal Container Apps DNS names.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-NATIVE-METRICS",
+      "component": "metrics-service",
+      "axis": "build",
+      "summary": "The metrics lockfile contains a native package.",
+      "detail": "grpcio is present in the locked dependency tree.",
+      "fix": "Build the metrics image in Azure Container Registry.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-SQLITE-METRICS",
+      "component": "metrics-service",
+      "axis": "deployability",
+      "summary": "Metrics persistence is SQLite-backed.",
+      "detail": "The database at /var/lib/sqlite/metrics.db is local to a replica; restarts or multiple replicas can lose or diverge data without a durable shared design.",
+      "fix": "Use Azure Files with a single replica or migrate the metrics repository to a managed database.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-FAVICON",
+      "component": "frontend",
+      "axis": "completeness",
+      "summary": "The frontend references a favicon that is not present.",
+      "detail": "frontend/index.html references /favicon.ico, while frontend/public contains logo.png and rum.js.",
+      "fix": "Add the missing favicon asset or remove the reference.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-LOCALHOST-URL-FRONTEND",
+      "component": "frontend",
+      "axis": "deployability",
+      "summary": "Frontend development fallbacks use localhost URLs.",
+      "detail": "If runtime configuration is absent in the embedded build, browser requests can target local auth or registry services instead of the deployed Container Apps endpoints.",
+      "fix": "Provide production frontend runtime configuration and verify all auth and API URLs use HTTPS deployment endpoints.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-CLI-NONDEPLOYABLE",
+      "component": "cli",
+      "axis": "deployability",
+      "summary": "The Ink CLI is not a hosted service.",
+      "detail": "It is a Node client with a bin entrypoint and should not be modeled as an Azure web workload.",
+      "fix": "Publish it separately as an npm package or client container.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-NATIVE-MCP-CURRENTTIME",
+      "component": "mcp-currenttime",
+      "axis": "build",
+      "summary": "The current-time MCP lockfile contains cryptography.",
+      "detail": "The locked FastMCP dependency tree includes a native cryptography package.",
+      "fix": "Build the image in Azure Container Registry.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-TCP-PROBE-CURRENTTIME",
+      "component": "mcp-currenttime",
+      "axis": "deployability",
+      "summary": "The current-time MCP service has only a generic TCP probe.",
+      "detail": "No application-specific HTTP health route was found; an HTTP Container Apps probe would not be valid without an added route.",
+      "fix": "Use a TCP probe or add an unauthenticated HTTP health route.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-NATIVE-MCP-FAKE",
+      "component": "mcp-fake-tools",
+      "axis": "build",
+      "summary": "The fake-tools MCP lockfile contains cryptography.",
+      "detail": "The locked FastMCP dependency tree includes a native cryptography package.",
+      "fix": "Build the image in Azure Container Registry.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-TCP-PROBE-FAKE",
+      "component": "mcp-fake-tools",
+      "axis": "deployability",
+      "summary": "The fake-tools MCP service has only a generic TCP probe.",
+      "detail": "This sample service is optional and has no dedicated HTTP health endpoint.",
+      "fix": "Keep it internal and use a TCP probe, or add an HTTP health route if it is promoted beyond testing.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-NATIVE-MCPGW",
+      "component": "mcp-gateway",
+      "axis": "build",
+      "summary": "The MCP gateway lockfile contains cryptography.",
+      "detail": "The locked FastMCP dependency tree includes a native cryptography package.",
+      "fix": "Build the image in Azure Container Registry.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-MCPGW-REGISTRY-URL",
+      "component": "mcp-gateway",
+      "axis": "deployability",
+      "summary": "The MCP gateway defaults to a Compose-only registry URL.",
+      "detail": "REGISTRY_BASE_URL must not remain http://registry:8080 when the gateway is moved to Container Apps.",
+      "fix": "Set REGISTRY_BASE_URL to the registry Container App internal DNS name or approved HTTPS endpoint.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-COMPOSE-HOSTNAMES-MCPGW",
+      "component": "mcp-gateway",
+      "axis": "deployability",
+      "summary": "The MCP gateway relies on Docker Compose service discovery.",
+      "detail": "The registry and optional metrics service are addressed by Compose names in the current deployment surface.",
+      "fix": "Replace those names with Container Apps environment DNS names and configure private ingress.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-NATIVE-A2A",
+      "component": "a2a-agents",
+      "axis": "build",
+      "summary": "The A2A lockfile contains native cryptography and a large AWS-oriented agent dependency tree.",
+      "detail": "The agents use cryptography and Strands/A2A packages; image builds should run in ACR and the model runtime still needs an Azure-compatible path.",
+      "fix": "Build in Azure Container Registry and replace or disable the AWS-oriented model/runtime integration.",
+      "fixPhase": "scaffold"
+    },
+    {
+      "id": "W-SQLITE-A2A",
+      "component": "a2a-agents",
+      "axis": "deployability",
+      "summary": "Both A2A agents write SQLite data under /app/data.",
+      "detail": "Container replacement or scale-out can lose local flight and booking state; shared writable storage is not provided by the current images.",
+      "fix": "Use a managed datastore or explicitly constrain the agents to one replica with durable Azure Files.",
+      "fixPhase": "post-deploy"
+    },
+    {
+      "id": "W-UV-RUN",
+      "component": "a2a-agents",
+      "axis": "deployability",
+      "summary": "Both A2A Dockerfiles invoke uv at runtime.",
+      "detail": "The commands are CMD uv run --no-sync server.py and CMD uv run --no-sync agent.py. The prerequisite rule treats runtime uv wrappers as a startup risk for non-root containers.",
+      "fix": "Use the direct /app/.venv/bin/python executable in each Dockerfile CMD.",
+      "fixPhase": "prereq"
+    }
+  ],
+  "detectedStack": "Python 3.14 / FastAPI / FastMCP monorepo with React/Vite and TypeScript CLI, packaged as Docker images; Helm and Docker Compose deployment surfaces",
+  "fastTrackEligible": false,
+  "overallHealth": "blocked",
+  "buildRequirements": {
+    "hasNativeModules": true,
+    "hasDockerfile": true,
+    "f1Viable": false,
+    "hasBuildKitSyntax": false,
+    "exposedPort": 8080,
+    "estimatedInstallTime": 900,
+    "f1BlockReason": "native modules (numpy, cryptography, scipy, scikit-learn, torch) and large ASGI dependency tree"
+  },
+  "healthEndpoint": "/health",
+  "entryPoint": "registry/main.py",
+  "cloudSdkFindings": [
+    {
+      "id": "CLOUD-SDK-REGISTRY-AWS",
+      "classification": "CLOUD_SDK_MIGRATION",
+      "severity": "major",
+      "component": "registry-api",
+      "dependency": "boto3 / botocore",
+      "files": [
+        "registry/utils/mongodb_connection.py",
+        "registry/utils/cognito_manager.py",
+        "registry/secrets/factory.py",
+        "registry/services/federation/agentcore_client.py"
+      ],
+      "functionalUse": "AWS DocumentDB IAM, Cognito, Secrets Manager, and AgentCore integrations.",
+      "azureEquivalent": "MongoDB Atlas or Cosmos DB for MongoDB, Microsoft Entra ID, Azure Key Vault, and Azure Container Apps managed identity.",
+      "optional": true,
+      "requiredAction": "Swap each enabled path or explicitly disable it before Azure deployment."
+    },
+    {
+      "id": "CLOUD-SDK-REGISTRY-BEDROCK",
+      "classification": "CLOUD_SDK_MIGRATION",
+      "severity": "major",
+      "component": "registry-api",
+      "dependency": "langchain-aws and Bedrock LiteLLM model paths",
+      "files": [
+        "pyproject.toml",
+        "registry/embeddings/client.py",
+        "docs/embeddings.md"
+      ],
+      "functionalUse": "Optional Bedrock embeddings and AWS-specific model configuration.",
+      "azureEquivalent": "Azure OpenAI or another OpenAI-compatible endpoint configured through LiteLLM.",
+      "optional": true,
+      "requiredAction": "Use a non-Bedrock embedding provider and remove or disable AWS credential-dependent model configuration."
+    },
+    {
+      "id": "CLOUD-SDK-AUTH-COGNITO",
+      "classification": "CLOUD_SDK_MIGRATION",
+      "severity": "major",
+      "component": "auth-server",
+      "dependency": "boto3 Cognito integration",
+      "files": [
+        "auth_server/pyproject.toml",
+        "auth_server/providers/cognito.py",
+        "auth_server/server.py"
+      ],
+      "functionalUse": "Authentication and token/JWKS operations for the Cognito provider.",
+      "azureEquivalent": "Microsoft Entra ID or Entra External ID.",
+      "optional": true,
+      "requiredAction": "Select and configure Entra ID or separately host a production IdP; do not leave the Cognito path enabled."
+    },
+    {
+      "id": "CLOUD-SDK-CLI-BEDROCK",
+      "classification": "CLOUD_SDK_MIGRATION",
+      "severity": "major",
+      "component": "cli",
+      "dependency": "@aws-sdk/client-bedrock-runtime",
+      "files": [
+        "cli/package.json"
+      ],
+      "functionalUse": "Optional Bedrock model calls from the CLI.",
+      "azureEquivalent": "Azure OpenAI or another supported model API.",
+      "optional": true,
+      "requiredAction": "Replace the Bedrock client or exclude the optional Bedrock command from the Azure release."
+    },
+    {
+      "id": "CLOUD-SDK-A2A-STRANDS",
+      "classification": "CLOUD_SDK_MIGRATION",
+      "severity": "major",
+      "component": "a2a-agents",
+      "dependency": "strands-agents and bedrock-agentcore-starter-toolkit",
+      "files": [
+        "agents/a2a/pyproject.toml",
+        "agents/a2a/src/travel-assistant-agent/agent.py",
+        "agents/a2a/src/flight-booking-agent/agent.py"
+      ],
+      "functionalUse": "AWS-oriented agent runtime and model integration.",
+      "azureEquivalent": "An Azure OpenAI-compatible agent implementation hosted in Container Apps.",
+      "optional": true,
+      "requiredAction": "Replace or adapt the AWS-oriented model/runtime integration, or disable the A2A images for the first Azure deployment."
+    }
+  ],
+  "postDeployRecommendations": [
+    {
+      "title": "Build native images in Azure Container Registry",
+      "reason": "Python native and scientific dependencies make free-tier or platform-native builds unsuitable.",
+      "effort": "medium",
+      "services": [
+        "Azure Container Registry",
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Configure the registry edge and probes",
+      "reason": "The registry image combines nginx and uvicorn and exposes multiple ports.",
+      "effort": "medium",
+      "services": [
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Move registry runtime state to durable services",
+      "reason": "Container-local logs, mappings, certificates, scans, and local models do not survive replacement reliably.",
+      "effort": "high",
+      "services": [
+        "Azure Blob Storage",
+        "Azure Files",
+        "MongoDB Atlas or Cosmos DB"
+      ]
+    },
+    {
+      "title": "Replace Compose hostnames with Azure endpoints",
+      "reason": "Docker DNS names such as mongodb, metrics-service, keycloak, openbao, and registry do not resolve on Azure PaaS.",
+      "effort": "low",
+      "services": [
+        "Azure Container Apps",
+        "MongoDB Atlas or Cosmos DB"
+      ]
+    },
+    {
+      "title": "Set production HTTPS URLs",
+      "reason": "Localhost defaults would direct browser callbacks or service calls to the wrong host.",
+      "effort": "low",
+      "services": [
+        "Azure Container Apps",
+        "Microsoft Entra ID"
+      ]
+    },
+    {
+      "title": "Select an Azure-compatible identity provider",
+      "reason": "The current Compose default selects Cognito even though Entra ID is available in the provider abstraction.",
+      "effort": "medium",
+      "services": [
+        "Microsoft Entra ID",
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Replace SQLite metrics persistence",
+      "reason": "SQLite is local to a replica and constrains durability and horizontal scaling.",
+      "effort": "high",
+      "services": [
+        "Azure Files",
+        "Azure Database for PostgreSQL"
+      ]
+    },
+    {
+      "title": "Add or remove the frontend favicon reference",
+      "reason": "The built frontend references an asset that is absent from public assets.",
+      "effort": "low",
+      "services": [
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Keep the CLI as a client artifact",
+      "reason": "The Ink CLI is not a hosted web workload.",
+      "effort": "low",
+      "services": [
+        "npm",
+        "Azure Container Registry"
+      ]
+    },
+    {
+      "title": "Use explicit TCP or HTTP probes for MCP samples",
+      "reason": "The current-time and fake-tools images have generic TCP probes rather than HTTP health routes.",
+      "effort": "low",
+      "services": [
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Configure the MCP gateway registry endpoint",
+      "reason": "REGISTRY_BASE_URL currently assumes Docker Compose DNS.",
+      "effort": "low",
+      "services": [
+        "Azure Container Apps"
+      ]
+    },
+    {
+      "title": "Move A2A state off local SQLite",
+      "reason": "Agent data under /app/data is lost on replacement and is not shared across replicas.",
+      "effort": "high",
+      "services": [
+        "Azure Database for PostgreSQL",
+        "Azure Cosmos DB",
+        "Azure Files"
+      ]
+    },
+    {
+      "title": "Use direct A2A runtime commands",
+      "reason": "The A2A images should start the already-created virtual environment directly rather than invoking uv at runtime.",
+      "effort": "low",
+      "services": [
+        "Azure Container Registry",
+        "Azure Container Apps"
+      ]
+    }
+  ],
+  "initCommands": []
+}

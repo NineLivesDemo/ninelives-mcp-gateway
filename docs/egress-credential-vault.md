@@ -39,7 +39,7 @@ the gateway to call a third party **as** the user.
 |------|---------|
 | **Egress auth** | Outbound authorization: the gateway calling a third-party API as the user. |
 | **OBO (on-behalf-of)** | The agent acts with the user's own delegated authority, not a shared bot identity. |
-| **Vault / secret store** | Where per-user third-party tokens live. Two backends: **OpenBao** (EKS/Helm) or **AWS Secrets Manager** (ECS). |
+| **Vault / secret store** | Where per-user third-party tokens live. The application supports **OpenBao** and **AWS Secrets Manager** backends; the production deployment should run the secret store independently of the Registry. |
 | **Consent** | The one-time OAuth authorize flow the user completes per `(provider, server)`. |
 | **Vend** | The internal call that hands a valid third-party access token to the proxy hop at request time. |
 | **AS facade** | The gateway's own session-verified "connect" front door (`/oauth2/egress/connect`) that brokers consent — the MCP client itself performs no OAuth. |
@@ -254,16 +254,106 @@ and no principal binding to know whose vault to write.
 ## Secret store backends
 
 The vault stores the SECRET payload (`StoredToken`: access token, refresh token,
-expiry, scopes, status, client_id). Two backends implement the same
-`SecretStoreBase` contract:
+expiry, scopes, status, client_id). Every backend implements the same
+`SecretStoreBase` contract. The current implementation includes OpenBao and AWS
+Secrets Manager; additional cloud-native adapters can be added without changing
+the egress OAuth flow.
 
 | Backend | Surface | Layout | Auth |
 |---------|---------|--------|------|
-| **OpenBao** (`secret_store_backend=openbao`) | EKS / Helm | One KV v2 entry per connection at `{prefix}/{auth}/{user}/{provider}/{server}` | `token`, `kubernetes`, or `approle`; re-authenticates on token expiry. |
-| **AWS Secrets Manager** (`secret_store_backend=secrets-manager`) | ECS / Terraform | One secret per principal holding a JSON map `{map_key: StoredToken}` | IAM task role; optional CMK for envelope encryption. Read-merge-write-verify for concurrent writers. |
+| **OpenBao** (`secret_store_backend=openbao`) | External OpenBao service; local Compose may provide a development instance | One KV v2 entry per connection at `{prefix}/{auth}/{user}/{provider}/{server}` | `token`, `kubernetes`, or `approle`; re-authenticates on token expiry. |
+| **AWS Secrets Manager** (`secret_store_backend=secrets-manager`) | Managed AWS service | One secret per principal holding a JSON map `{map_key: StoredToken}` | IAM task role; optional CMK for envelope encryption. Read-merge-write-verify for concurrent writers. |
 
 > There is no local file backend. `secret_store_backend` accepts only
 > `openbao` or `secrets-manager`. The default is `openbao`.
+
+---
+
+## Deployment architecture decision: decoupled production secret store
+
+The Registry should depend on a provider-neutral secret-store API, not on an
+OpenBao process or any other secret service running in the same Compose project,
+host, or workload. This keeps the per-user third-party tokens outside the
+Registry's application and deployment lifecycle and allows the deployment to
+move between cloud providers.
+
+### Recommended deployment model
+
+| Deployment | Secret-store adapter | Workload authentication |
+|------------|----------------------|------------------------|
+| Local Docker Compose | OpenBao | Development token or mounted token file |
+| AWS | AWS Secrets Manager | ECS task role or equivalent workload identity |
+| Azure | Azure Key Vault adapter (planned) | Managed Identity or workload identity |
+| GCP | Google Secret Manager adapter (planned) | Workload Identity or service account federation |
+| Any cloud / self-hosted | OpenBao or HashiCorp Vault adapter | Kubernetes auth, AppRole, or another workload identity |
+
+Managed cloud secret managers are preferred when the deployment is tied to a
+cloud provider. OpenBao or HashiCorp Vault is useful when portability,
+self-hosting, dynamic credentials, leases, PKI, or transit encryption are
+required.
+
+### Portability boundary
+
+The egress service must depend only on operations that all supported backends
+can provide: put, get, delete, and list for a canonical `(auth_method,
+user_id, provider, server_path)` key. Backend-specific SDKs, authentication
+mechanisms, secret naming restrictions, versioning, and retry behavior belong
+inside the adapter.
+
+The application must not assume that every backend provides dynamic secrets,
+leases, PKI, or conditional writes. Those are optional capabilities and must
+not be required by the core OAuth token-vault flow. For backends with
+read-modify-write semantics, the existing operational coordination lease
+should protect concurrent updates.
+
+Keycloak remains independent of this boundary. It authenticates users and
+provides the verified subject used in the canonical vault key; it does not
+determine which cloud secret provider is selected. Workload authentication to
+the selected secret provider is a separate deployment concern.
+
+HashiCorp Vault is not automatically a supported application backend merely
+because it shares Vault APIs with OpenBao. The existing `openbao` adapter should
+only be pointed at HashiCorp Vault after compatibility has been tested for the
+configured KV, authentication, lease, and policy behavior. A dedicated adapter
+may be preferable when Vault-specific features or support guarantees are
+required.
+
+### Production requirements
+
+- Keep the secret store on an independently managed lifecycle and storage
+  boundary.
+- Use TLS with certificate verification and a private network path; do not
+  expose the secret store publicly.
+- Grant the Registry only the exact read, write, refresh, and delete access
+  required for its configured secret prefix.
+- Prefer workload identity, Kubernetes auth, or AppRole over a long-lived
+  root or administrator token.
+- Configure backups, audit logging, availability monitoring, and a tested
+  recovery procedure separately from the Registry.
+- Fail closed when the secret store is unavailable or its configuration is
+  missing; do not fall back to plaintext, local files, or an alternate
+  unapproved backend.
+
+Decoupling does not mean that every local developer must operate a separate
+service. The local OpenBao container is useful as an opt-in development
+dependency; the production boundary is the important change.
+
+### Migration direction
+
+1. Keep the `SecretStoreBase` interface and backend selection in the Registry.
+2. Make local OpenBao startup optional rather than an unconditional stack
+   dependency.
+3. Add cloud-native adapters behind the same interface, beginning with Azure
+   Key Vault for the current deployment.
+4. Configure each production environment with an external endpoint or managed
+   service and workload-scoped credentials.
+5. Validate connectivity, policy scope, TLS, rotation, and recovery before
+   enabling `EGRESS_AUTH_ENABLED`.
+6. Migrate existing vaulted tokens using a controlled export/import procedure;
+   never copy them through logs, shell arguments, or plaintext files.
+
+This is an architecture decision and documentation target. It does not change
+the current Compose or Helm behavior by itself.
 
 ---
 

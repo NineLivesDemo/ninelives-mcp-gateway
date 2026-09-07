@@ -13,6 +13,7 @@ Markdown here in the repository.
 ## Where to start
 
 - [Quick Start](quickstart.md) and [Installation Guide](installation.md)
+- [Current Deployment Runbook](current-deployment-runbook.md) - as-built wiring, startup, verification, and recovery
 - [Complete Setup Guide](complete-setup-guide.md)
 - [Authentication](auth.md) and [Access Control & Scopes](scopes.md)
 - [Theory of the System](design/theory-of-the-system.md) - the design and its invariants
