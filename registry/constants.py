@@ -104,6 +104,9 @@ class RegistryConstants(BaseModel):
     ANTHROPIC_API_DEFAULT_LIMIT: int = 100
     ANTHROPIC_API_MAX_LIMIT: int = 1000
 
+    # Federation protocol version advertised in Registry Cards.
+    FEDERATION_API_VERSION: str = "1.0"
+
     # External Registry Tags
     # Comma-separated list of tags that identify external registry servers
     # Example: "anthropic-registry,workday-asor,custom-registry"

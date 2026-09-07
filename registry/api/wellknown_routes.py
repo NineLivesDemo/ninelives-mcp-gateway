@@ -16,6 +16,7 @@ from ..core.config import settings
 from ..repositories.factory import get_registry_card_repository
 from ..schemas.registry_card import RegistryCard, RegistryContact
 from ..services import ard_service
+from ..services.registry_card_metadata import build_registry_card_system_fields
 from ..services.server_service import server_service
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,14 @@ async def _auto_initialize_registry_card():
     repo = get_registry_card_repository()
     card = await repo.get()
     if card is not None:
+        system_fields = build_registry_card_system_fields()
+        updates = {
+            field: value
+            for field, value in system_fields.items()
+            if getattr(card, field) != value
+        }
+        if updates:
+            card = await repo.save(card.model_copy(update=updates))
         return card
 
     # Slow path: card missing — serialize initialization under the lock.
@@ -85,11 +94,17 @@ async def _auto_initialize_registry_card():
         # Re-read under lock; another coroutine may have initialized.
         card = await repo.get()
         if card is not None:
+            system_fields = build_registry_card_system_fields()
+            updates = {
+                field: value
+                for field, value in system_fields.items()
+                if getattr(card, field) != value
+            }
+            if updates:
+                card = await repo.save(card.model_copy(update=updates))
             return card
         # Auto-initialize from config defaults
         import random
-
-        from registry.version import __version__
 
         logger.info("Registry card not found, auto-initializing from config")
 
@@ -106,18 +121,6 @@ async def _auto_initialize_registry_card():
         organization_name = settings.registry_organization_name
         logger.info(f"Using organization name: {organization_name}")
 
-        # Get full API version from version module (e.g., "1.0.17")
-        version_str = __version__
-        # Remove 'v' prefix if present (e.g., "v1.0.17" -> "1.0.17")
-        if version_str.startswith("v"):
-            version_str = version_str[1:]
-        # Remove git suffix if present (e.g., "1.0.17-6-gf5c000c3-main" -> "1.0.17")
-        version_parts = version_str.split("-")[0]
-        federation_api_version = version_parts
-        logger.info(
-            f"Using federation API version: {federation_api_version} (from app version: {__version__})"
-        )
-
         contact = None
         if settings.registry_contact_email or settings.registry_contact_url:
             contact = RegistryContact(
@@ -125,64 +128,14 @@ async def _auto_initialize_registry_card():
                 url=settings.registry_contact_url,
             )
 
-        # Build OAuth params based on auth provider
-        import os
-
-        oauth2_issuer = None
-        oauth2_token_endpoint = None
-
-        if settings.auth_provider == "okta":
-            okta_domain = os.getenv("OKTA_DOMAIN")
-            okta_auth_server_id = os.getenv("OKTA_AUTH_SERVER_ID", "default")
-            if okta_domain:
-                oauth2_issuer = f"https://{okta_domain}/oauth2/{okta_auth_server_id}"
-                oauth2_token_endpoint = (
-                    f"https://{okta_domain}/oauth2/{okta_auth_server_id}/v1/token"
-                )
-        elif settings.auth_provider == "keycloak":
-            keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", "http://localhost:8080")
-            keycloak_realm = os.getenv("KEYCLOAK_REALM", "mcp-gateway")
-            oauth2_issuer = f"{keycloak_external_url}/realms/{keycloak_realm}"
-            oauth2_token_endpoint = (
-                f"{keycloak_external_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
-            )
-        elif settings.auth_provider == "entra":
-            entra_tenant_id = os.getenv("ENTRA_TENANT_ID")
-            if entra_tenant_id:
-                oauth2_issuer = f"https://login.microsoftonline.com/{entra_tenant_id}/v2.0"
-                oauth2_token_endpoint = (
-                    f"https://login.microsoftonline.com/{entra_tenant_id}/oauth2/v2.0/token"
-                )
-        elif settings.auth_provider == "cognito":
-            cognito_user_pool_id = os.getenv("COGNITO_USER_POOL_ID")
-            cognito_domain = os.getenv("COGNITO_DOMAIN")
-            aws_region = os.getenv("AWS_REGION", "us-east-1")
-            if cognito_user_pool_id:
-                oauth2_issuer = (
-                    f"https://cognito-idp.{aws_region}.amazonaws.com/{cognito_user_pool_id}"
-                )
-            if cognito_domain:
-                oauth2_token_endpoint = (
-                    f"https://{cognito_domain}.auth.{aws_region}.amazoncognito.com/oauth2/token"
-                )
-
-        from registry.schemas.registry_card import RegistryAuthConfig
-
-        auth_config = RegistryAuthConfig(
-            oauth2_issuer=oauth2_issuer,
-            oauth2_token_endpoint=oauth2_token_endpoint,
-        )
+        system_fields = build_registry_card_system_fields()
 
         # Don't pass id - let RegistryCard auto-generate UUID via default_factory
         # registry_id was for the old implementation, now we use auto-generated UUIDs
         card = RegistryCard(
             name=registry_name,
             description=settings.registry_description,
-            registry_url=settings.registry_url,
-            organization_name=organization_name,
-            federation_api_version=federation_api_version,
-            federation_endpoint=f"{settings.registry_url}/api/v1/federation",
-            authentication=auth_config,
+            **system_fields,
             contact=contact,
         )
 
