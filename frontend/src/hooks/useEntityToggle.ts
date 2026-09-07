@@ -12,6 +12,8 @@ interface UseEntityToggleOptions<T> {
   /** Human label used in toast/error messages (e.g. 'Server', 'Agent', 'Skill'). */
   label: string;
   showToast: ToastFn;
+  /** Updates related aggregate state alongside the optimistic entity change. */
+  onStateChange?: (enabled: boolean) => void;
 }
 
 /**
@@ -26,7 +28,7 @@ interface UseEntityToggleOptions<T> {
 export function useEntityToggle<T extends { path: string }>(
   options: UseEntityToggleOptions<T>,
 ): (path: string, enabled: boolean) => Promise<void> {
-  const { setItems, enabledField, apiCall, label, showToast } = options;
+  const { setItems, enabledField, apiCall, label, showToast, onStateChange } = options;
 
   return useCallback(
     async (path: string, enabled: boolean) => {
@@ -39,6 +41,7 @@ export function useEntityToggle<T extends { path: string }>(
 
       // Optimistically update, then revert if the call fails.
       apply(enabled);
+      onStateChange?.(enabled);
       try {
         await apiCall(path, enabled);
         showToast(
@@ -48,12 +51,13 @@ export function useEntityToggle<T extends { path: string }>(
       } catch (error: any) {
         console.error(`Failed to toggle ${label.toLowerCase()}:`, error);
         apply(!enabled);
+        onStateChange?.(!enabled);
         showToast(
           error.response?.data?.detail || `Failed to toggle ${label.toLowerCase()}`,
           'error',
         );
       }
     },
-    [setItems, enabledField, apiCall, label, showToast],
+    [setItems, enabledField, apiCall, label, showToast, onStateChange],
   );
 }

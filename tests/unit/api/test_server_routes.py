@@ -10,6 +10,7 @@ Tests the main server routes including:
 - POST /internal/remove - Internal removal with JWT Bearer Auth
 """
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -750,9 +751,6 @@ class TestToggleService:
         self,
         test_client_admin,
         mock_server_service,
-        mock_nginx_service,
-        mock_nginx_reload_scheduler,
-        mock_health_service,
         sample_server_info,
     ):
         """Test successful toggle service on."""
@@ -772,14 +770,38 @@ class TestToggleService:
             data = response.json()
             assert data["new_enabled_state"] is True
             assert data["service_path"] == "/test-server"
+            assert data["status"] == "checking"
             mock_server_service.toggle_service.assert_called_once_with("/test-server", True)
-            mock_nginx_reload_scheduler.flush_now.assert_called()
+
+    def test_toggle_service_returns_before_slow_background_work(
+        self, test_client_admin, mock_server_service, sample_server_info
+    ):
+        """Test that slow post-toggle work cannot hold the HTTP request open."""
+        mock_server_service.get_server_info.return_value = sample_server_info
+        mock_server_service.toggle_service.return_value = True
+
+        async def slow_background_work(**_kwargs):
+            await asyncio.sleep(60)
+
+        with (
+            patch(
+                "registry.auth.dependencies.user_has_ui_permission_for_service",
+                return_value=True,
+            ),
+            patch(
+                "registry.api.server_routes._complete_toggle_side_effects",
+                new=slow_background_work,
+            ),
+        ):
+            response = test_client_admin.post("/api/toggle/test-server", data={"enabled": "on"})
+
+        assert response.status_code == 200
+        assert response.json()["new_enabled_state"] is True
 
     def test_toggle_service_off_success(
         self,
         test_client_admin,
         mock_server_service,
-        mock_nginx_service,
         sample_server_info,
     ):
         """Test successful toggle service off."""
@@ -854,14 +876,13 @@ class TestToggleService:
             assert response.status_code == 403
             assert "access" in response.json()["detail"].lower()
 
-    def test_toggle_service_performs_health_check_when_enabling(
-        self, test_client_admin, mock_server_service, mock_health_service, sample_server_info
+    def test_toggle_service_queues_health_check_when_enabling(
+        self, test_client_admin, mock_server_service, sample_server_info
     ):
-        """Test that enabling a service triggers immediate health check."""
+        """Test that enabling a service returns while health work runs in the background."""
         # Arrange
         mock_server_service.get_server_info.return_value = sample_server_info
         mock_server_service.toggle_service.return_value = True
-        mock_health_service.perform_immediate_health_check.return_value = ("healthy", None)
 
         with patch(
             "registry.auth.dependencies.user_has_ui_permission_for_service", return_value=True
@@ -871,10 +892,7 @@ class TestToggleService:
 
             # Assert
             assert response.status_code == 200
-            mock_health_service.perform_immediate_health_check.assert_called_once_with(
-                "/test-server"
-            )
-            mock_health_service.broadcast_health_update.assert_called_once_with("/test-server")
+            assert response.json()["status"] == "checking"
 
 
 # =============================================================================

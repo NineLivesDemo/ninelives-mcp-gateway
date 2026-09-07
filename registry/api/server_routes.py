@@ -71,6 +71,8 @@ from ..utils.credential_encryption import (
 from ..utils.metadata import flatten_metadata_to_text
 from ._etag_utils import parse_if_match, updated_ms, weak_etag_for_timestamp
 
+_toggle_side_effect_tasks: set[asyncio.Task[None]] = set()
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -1013,7 +1015,6 @@ async def toggle_service_route(
     _csrf: Annotated[None, Depends(verify_csrf_token_flexible)] = None,
 ):
     """Toggle a service on/off (requires toggle_service UI permission)."""
-    from ..health.service import health_service
 
     if not service_path.startswith("/"):
         service_path = "/" + service_path
@@ -1058,46 +1059,18 @@ async def toggle_service_route(
         f"Toggled '{server_name}' ({service_path}) to {new_state} by user '{user_context['username']}'"
     )
 
-    # If enabling, perform immediate health check.
-    # Note: avoid shadowing fastapi.status (imported at module level) — use
-    # health_status as the local variable so future raise HTTPException calls
-    # below can still use status.HTTP_*.
-    health_status = "disabled"
-    last_checked_iso = None
-    if new_state:
-        logger.info(f"Performing immediate health check for {service_path} upon toggle ON...")
-        try:
-            (
-                health_status,
-                last_checked_dt,
-            ) = await health_service.perform_immediate_health_check(service_path)
-            last_checked_iso = last_checked_dt.isoformat() if last_checked_dt else None
-            logger.info(
-                f"Immediate health check for {service_path} completed. Status: {health_status}"
-            )
-        except Exception as e:
-            logger.error(f"ERROR during immediate health check for {service_path}: {e}")
-            health_status = f"error: immediate check failed ({type(e).__name__})"
-    else:
-        # When disabling, set status to disabled
-        health_status = "disabled"
-        logger.info(f"Service {service_path} toggled OFF. Status set to disabled.")
-
-    # Update DocumentDB search index with new enabled state so semantic search
-    # reflects the toggle immediately (pre-existing gap: toggle did not re-index).
-    from ..repositories.factory import get_search_repository
-
-    search_repo = get_search_repository()
-    await search_repo.index_server(service_path, server_info, new_state)
-
-    # Flush nginx config immediately (toggle must take effect before response)
-    from ..core.nginx_service import nginx_reload_scheduler
-
-    nginx_reload_scheduler.mark_dirty()
-    await nginx_reload_scheduler.flush_now()
-
-    # Broadcast health status update to WebSocket clients
-    await health_service.broadcast_health_update(service_path)
+    # Federated servers can take longer than the reverse-proxy request timeout
+    # to health-check, index, and render into nginx. The persisted state change
+    # is complete; finish non-critical side effects without holding the request.
+    background_task = asyncio.create_task(
+        _complete_toggle_side_effects(
+            service_path=service_path,
+            server_info=server_info,
+            new_state=new_state,
+        )
+    )
+    _toggle_side_effect_tasks.add(background_task)
+    background_task.add_done_callback(_toggle_side_effect_tasks.discard)
 
     return JSONResponse(
         status_code=200,
@@ -1105,11 +1078,56 @@ async def toggle_service_route(
             "message": f"Toggle request for {service_path} processed.",
             "service_path": service_path,
             "new_enabled_state": new_state,
-            "status": health_status,
-            "last_checked_iso": last_checked_iso,
+            "status": "checking" if new_state else "disabled",
+            "last_checked_iso": None,
             "num_tools": server_info.get("num_tools", 0),
         },
     )
+
+
+async def _complete_toggle_side_effects(
+    service_path: str,
+    server_info: dict[str, Any],
+    new_state: bool,
+) -> None:
+    """Complete health, search, and nginx work after a toggle response."""
+    from ..core.nginx_service import nginx_reload_scheduler
+    from ..health.service import health_service
+    from ..repositories.factory import get_search_repository
+
+    if new_state:
+        try:
+            logger.info("Performing background health check for %s after toggle ON", service_path)
+            health_status, last_checked_dt = await health_service.perform_immediate_health_check(
+                service_path
+            )
+            logger.info(
+                "Background health check for %s completed: %s at %s",
+                service_path,
+                health_status,
+                last_checked_dt.isoformat() if last_checked_dt else None,
+            )
+        except Exception:
+            logger.exception("Background health check failed for %s", service_path)
+    else:
+        logger.info("Service %s toggled OFF; status set to disabled", service_path)
+
+    try:
+        search_repo = get_search_repository()
+        await search_repo.index_server(service_path, server_info, new_state)
+    except Exception:
+        logger.exception("Background search indexing failed for %s", service_path)
+
+    try:
+        # The scheduler coalesces rapid federated toggles into one nginx reload.
+        nginx_reload_scheduler.mark_dirty()
+    except Exception:
+        logger.exception("Background nginx reload scheduling failed for %s", service_path)
+
+    try:
+        await health_service.broadcast_health_update(service_path)
+    except Exception:
+        logger.exception("Background health broadcast failed for %s", service_path)
 
 
 # --- Registration deduplication ---

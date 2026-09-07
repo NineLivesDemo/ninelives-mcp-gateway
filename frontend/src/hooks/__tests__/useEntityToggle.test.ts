@@ -24,6 +24,7 @@ describe('useEntityToggle', () => {
     const { setItems, calls } = makeSetItems();
     const apiCall = jest.fn().mockResolvedValue(undefined);
     const showToast = jest.fn();
+    const onStateChange = jest.fn();
 
     const { result } = renderHook(() =>
       useEntityToggle<Item>({
@@ -32,6 +33,7 @@ describe('useEntityToggle', () => {
         apiCall,
         label: 'Server',
         showToast,
+        onStateChange,
       }),
     );
 
@@ -42,6 +44,7 @@ describe('useEntityToggle', () => {
     // First setItems call is the optimistic update flipping /a to enabled.
     expect(calls[0].find((i) => i.path === '/a')?.enabled).toBe(true);
     expect(apiCall).toHaveBeenCalledWith('/a', true);
+    expect(onStateChange).toHaveBeenCalledWith(true);
     expect(showToast).toHaveBeenCalledWith('Server enabled successfully!', 'success');
   });
 
@@ -51,6 +54,7 @@ describe('useEntityToggle', () => {
       .fn()
       .mockRejectedValue({ response: { data: { detail: 'nope' } } });
     const showToast = jest.fn();
+    const onStateChange = jest.fn();
 
     const { result } = renderHook(() =>
       useEntityToggle<Item>({
@@ -59,6 +63,7 @@ describe('useEntityToggle', () => {
         apiCall,
         label: 'Skill',
         showToast,
+        onStateChange,
       }),
     );
 
@@ -69,6 +74,7 @@ describe('useEntityToggle', () => {
     // Two setItems calls: optimistic (true) then revert (false).
     expect(calls[0].find((i) => i.path === '/a')?.enabled).toBe(true);
     expect(calls[1].find((i) => i.path === '/a')?.enabled).toBe(false);
+    expect(onStateChange.mock.calls.map(([enabled]) => enabled)).toEqual([true, false]);
     expect(showToast).toHaveBeenCalledWith('nope', 'error');
   });
 

@@ -498,7 +498,9 @@ This section implements the official [Anthropic MCP Registry API specification](
 **Form Parameters:**
 - `enabled` (boolean)
 
-**Response:** `200 OK` with new status
+**Response:** `200 OK` after the enabled state is persisted. The response includes
+`status: "checking"` when enabling; health checks, search indexing, nginx
+configuration, and health broadcasts complete asynchronously.
 
 **Error Codes:**
 - `404 Not Found` - Service doesn't exist

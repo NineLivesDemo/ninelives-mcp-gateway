@@ -1,5 +1,5 @@
 import React from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import axios from 'axios';
 import { ServerStatsProvider, useServerStats } from '../ServerStatsContext';
 import { useRegistryConfig } from '../../hooks/useRegistryConfig';
@@ -131,6 +131,32 @@ describe('ServerStatsContext custom entities', () => {
     expect(serverCalls).toBe(2);
     expect(result.current.servers).toHaveLength(2001);
     expect(result.current.stats.total).toBe(2001);
+  });
+
+  test('adjusts enabled and disabled counts without refetching', async () => {
+    setConfig([]);
+    mockGetByUrl({
+      '/api/servers': {
+        servers: [
+          { path: '/enabled', display_name: 'Enabled', is_enabled: true },
+          { path: '/disabled', display_name: 'Disabled', is_enabled: false },
+        ],
+        total_count: 2,
+      },
+      '/api/agents': { agents: [] },
+      '/api/skills': { skills: [] },
+    });
+
+    const { result } = renderHook(() => useServerStats(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.adjustServerStats(true));
+    expect(result.current.stats.enabled).toBe(2);
+    expect(result.current.stats.disabled).toBe(0);
+
+    act(() => result.current.adjustServerStats(false));
+    expect(result.current.stats.enabled).toBe(1);
+    expect(result.current.stats.disabled).toBe(1);
   });
 
   test('folds custom records into stats and exposes them by type', async () => {

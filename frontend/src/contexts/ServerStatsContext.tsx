@@ -103,6 +103,7 @@ interface ServerStatsContextType {
   customRecordsByType: CustomTypeRecords[];
   setServers: React.Dispatch<React.SetStateAction<Server[]>>;
   setAgents: React.Dispatch<React.SetStateAction<Server[]>>;
+  adjustServerStats: (enabled: boolean) => void;
   activeFilter: string;
   setActiveFilter: (filter: string) => void;
   loading: boolean;
@@ -138,6 +139,14 @@ export const ServerStatsProvider: React.FC<ServerStatsProviderProps> = ({ childr
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const adjustServerStats = useCallback((enabled: boolean) => {
+    setStats((previous) => ({
+      ...previous,
+      enabled: previous.enabled + (enabled ? 1 : -1),
+      disabled: previous.disabled + (enabled ? -1 : 1),
+    }));
+  }, []);
 
   // Get registry config to determine which features are enabled
   const { config: registryConfig } = useRegistryConfig();
@@ -420,6 +429,7 @@ export const ServerStatsProvider: React.FC<ServerStatsProviderProps> = ({ childr
     customRecordsByType,
     setServers,
     setAgents,
+    adjustServerStats,
     activeFilter,
     setActiveFilter,
     loading,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import axios from 'axios';
 import Dashboard from '../Dashboard';
 
 /**
@@ -23,6 +24,7 @@ const stats = {
   refreshData: jest.fn(),
   setServers: jest.fn(),
   setAgents: jest.fn(),
+  adjustServerStats: jest.fn(),
 };
 const skillsState = {
   skills: [] as any[],
@@ -159,6 +161,7 @@ function renderDashboard(filter = 'all') {
 }
 
 beforeEach(() => {
+  jest.restoreAllMocks();
   stats.servers = [];
   stats.agents = [];
   stats.customRecordsByType = [];
@@ -285,6 +288,23 @@ describe('Dashboard entity collections', () => {
     expect(
       screen.getByText('No External Registries Available'),
     ).toBeInTheDocument();
+  });
+
+  it('shows a configured source before its first import', async () => {
+    jest.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        anthropic: {
+          enabled: true,
+          servers: [],
+        },
+      },
+    } as never);
+
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: 'External Registries' }));
+
+    expect(await screen.findByRole('button', { name: 'Anthropic' })).toBeInTheDocument();
+    expect(await screen.findByText('No Results Found')).toBeInTheDocument();
   });
 
   it('switches collections when tabs change', () => {

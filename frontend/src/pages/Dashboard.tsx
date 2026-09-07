@@ -213,7 +213,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ activeFilter = 'all', setActiveFilter, selectedTags = [] }) => {
   const navigate = useNavigate();
-  const { servers, agents: agentsFromStats, customRecordsByType: customEntityRecordsByType, loading, error, refreshData, setServers, setAgents } = useServerStats();
+  const { servers, agents: agentsFromStats, customRecordsByType: customEntityRecordsByType, loading, error, refreshData, setServers, setAgents, adjustServerStats } = useServerStats();
   const { skills, setSkills, loading: skillsLoading, error: skillsError, refreshData: refreshSkills } = useSkills();
   const {
     virtualServers,
@@ -489,6 +489,9 @@ const Dashboard: React.FC<DashboardProps> = ({ activeFilter = 'all', setActiveFi
         if (config.aws_registry?.enabled || (config.aws_registry?.registries?.length || 0) > 0) {
           configured.add('aws_registry');
         }
+        if (config.ai_catalog?.enabled || (config.ai_catalog?.sources?.length || 0) > 0) {
+          configured.add('ai_catalog');
+        }
         setConfiguredBuiltinSources(configured);
       } catch (error) {
         // Silently fail - the tabs simply fall back to showing none of the
@@ -701,6 +704,7 @@ const Dashboard: React.FC<DashboardProps> = ({ activeFilter = 'all', setActiveFi
     'anthropic': 'Anthropic',
     'aws_registry': 'AWS Agent Registry',
     'asor': 'ASOR',
+    'ai_catalog': 'ARD Catalog',
   };
 
   // Detect which dynamic (federated/ARD) sources exist from sync_metadata.
@@ -747,6 +751,11 @@ const Dashboard: React.FC<DashboardProps> = ({ activeFilter = 'all', setActiveFi
     // tab from appearing for a built-in source whose data is stale but which is
     // no longer configured.
     const hardcoded = order.filter(s => sources.has(s) && configuredBuiltinSources.has(s));
+    for (const source of ['anthropic', 'asor', 'aws_registry', 'ai_catalog']) {
+      if (configuredBuiltinSources.has(source) && !hardcoded.includes(source)) {
+        hardcoded.push(source);
+      }
+    }
     // Append dynamic (ARD) sources, which stay purely content-driven (shown when
     // they have items). Filter out any already covered by the hardcoded list.
     const dynamic = dynamicExternalSources.filter(id => !hardcoded.includes(id));
@@ -1667,6 +1676,7 @@ const Dashboard: React.FC<DashboardProps> = ({ activeFilter = 'all', setActiveFi
     enabledField: 'enabled',
     label: 'Server',
     showToast,
+    onStateChange: adjustServerStats,
     apiCall: async (path, enabled) => {
       const formData = new FormData();
       formData.append('enabled', enabled ? 'on' : 'off');
