@@ -334,8 +334,9 @@ HTTPS_PROXY=http://proxy.company.com:8080
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/federation/status` | Get federation configuration and status |
-| `POST` | `/api/federation/sync` | Sync all enabled federations |
-| `POST` | `/api/federation/sync/{source}` | Sync specific federation source |
+| `POST` | `/api/federation/sync` | Queue a sync for all enabled federations; returns `202` with a `job_id` |
+| `GET` | `/api/federation/sync/{job_id}` | Poll a queued sync job |
+| `POST` | `/api/federation/sync?source={source}` | Queue a sync for one federation source |
 
 ### Response Examples
 

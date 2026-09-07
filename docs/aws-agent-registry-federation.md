@@ -142,6 +142,14 @@ curl -X POST https://your-registry.com/api/federation/sync \
   -H "Authorization: Bearer <token>"
 ```
 
+The API returns `202 Accepted` with a `job_id` and `status_url`. Poll the
+status URL until `status` is `succeeded` or `failed`:
+
+```bash
+curl https://your-registry.com/api/federation/sync/{job_id} \
+  -H "Authorization: ******"
+```
+
 ### Manual Sync (CLI)
 
 ```bash

@@ -20,6 +20,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+CATALOG_PAGE_SIZE = 100
+MAX_CATALOG_PAGES = 100
+
 
 class AnthropicFederationClient(BaseFederationClient):
     """Client for fetching servers from Anthropic MCP Registry."""
@@ -95,6 +98,9 @@ class AnthropicFederationClient(BaseFederationClient):
         Returns:
             List of server data dictionaries
         """
+        if not server_configs:
+            return self._fetch_catalog_servers()
+
         servers = []
 
         for config in server_configs:
@@ -105,6 +111,56 @@ class AnthropicFederationClient(BaseFederationClient):
                 logger.warning(f"Failed to fetch server: {config.name}")
 
         logger.info(f"Successfully fetched {len(servers)}/{len(server_configs)} servers")
+        return servers
+
+    def _fetch_catalog_servers(self) -> list[dict[str, Any]]:
+        """Fetch every server from the paginated public MCP Directory."""
+        servers: list[dict[str, Any]] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+
+        for page_number in range(MAX_CATALOG_PAGES):
+            params: dict[str, Any] = {"limit": CATALOG_PAGE_SIZE}
+            if cursor:
+                params["cursor"] = cursor
+
+            response = self._make_request(
+                f"{self.endpoint}/{self.api_version}/servers",
+                params=params,
+            )
+            if not response:
+                logger.error("MCP Directory catalog request returned no response")
+                break
+
+            for entry in response.get("servers", []):
+                if not isinstance(entry, dict):
+                    logger.warning("Skipping malformed MCP Directory catalog entry")
+                    continue
+                server = entry.get("server", {})
+                if not isinstance(server, dict):
+                    logger.warning("Skipping MCP Directory entry with malformed server data")
+                    continue
+                server_name = server.get("name")
+                if isinstance(server_name, str) and server_name:
+                    servers.append(self._transform_server_response(entry, server_name, None))
+
+            metadata = response.get("metadata", {})
+            next_cursor = metadata.get("nextCursor") if isinstance(metadata, dict) else None
+            if not next_cursor:
+                break
+            if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
+                logger.error("MCP Directory returned an invalid or repeated pagination cursor")
+                break
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        else:
+            logger.warning(
+                "MCP Directory pagination stopped at the maximum page limit (%d)",
+                MAX_CATALOG_PAGES,
+            )
+
+        logger.info("Fetched %d servers from the MCP Directory catalog", len(servers))
         return servers
 
     def _transform_server_response(

@@ -568,7 +568,9 @@ The Registry Card automatically configures authentication endpoints based on you
 - **Okta**: Uses your Okta domain endpoints
 - **Cognito**: Uses AWS Cognito endpoints
 
-The authentication configuration is read-only and updates automatically when you change authentication providers.
+The authentication configuration is read-only and is reconciled from the active provider configuration when the Registry Card is read. For Keycloak, `KEYCLOAK_URL` is the private service URL and `KEYCLOAK_EXTERNAL_URL` is the browser/federation URL; they must not be swapped.
+
+For local development, loopback HTTP URLs are acceptable for a single-host test. Before enabling federation, set `REGISTRY_URL` and `KEYCLOAK_EXTERNAL_URL` to stable, externally reachable HTTPS URLs. The Registry Card, OAuth discovery metadata, Keycloak issuer claim, and redirect allowlist must use those same canonical URLs.
 
 ## Related Documentation
 

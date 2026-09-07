@@ -4,8 +4,9 @@ Federation configuration API routes.
 Provides endpoints to manage federation configurations.
 """
 
+import asyncio
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -28,6 +29,10 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+_federation_sync_jobs: dict[str, dict[str, Any]] = {}
+_federation_sync_tasks: dict[str, asyncio.Task[None]] = {}
+_federation_sync_jobs_lock = asyncio.Lock()
 
 
 def _check_federation_management_scope(
@@ -977,52 +982,56 @@ async def _deregister_skills_from_registry(
     return deregistered
 
 
-@router.post("/federation/sync", tags=["federation"], summary="Trigger manual federation sync")
-async def sync_federation(
-    request: Request,
-    config_id: str = "default",
-    source: str | None = None,
-    user_context: Annotated[dict, Depends(nginx_proxied_auth)] = None,
-    repo: FederationConfigRepositoryBase = Depends(_get_federation_repo),
-    _csrf: Annotated[None, Depends(verify_csrf_token_flexible)] = None,
+async def _run_federation_sync_job(
+    job_id: str,
+    config_id: str,
+    source: str | None,
+    submitted_by: str,
+    repo: FederationConfigRepositoryBase,
+) -> None:
+    """Run a federation sync and retain its result for status polling."""
+    async with _federation_sync_jobs_lock:
+        job = _federation_sync_jobs.get(job_id)
+        if job is None:
+            return
+        job["status"] = "running"
+        job["updated_at"] = datetime.now(UTC).isoformat()
+
+    try:
+        result = await _perform_federation_sync(
+            config_id=config_id,
+            source=source,
+            submitted_by=submitted_by,
+            repo=repo,
+        )
+    except Exception:
+        logger.exception("Federation sync job failed: %s", job_id)
+        async with _federation_sync_jobs_lock:
+            job = _federation_sync_jobs.get(job_id)
+            if job is not None:
+                job["status"] = "failed"
+                job["error"] = "Federation sync failed"
+                job["updated_at"] = datetime.now(UTC).isoformat()
+    else:
+        async with _federation_sync_jobs_lock:
+            job = _federation_sync_jobs.get(job_id)
+            if job is not None:
+                job["status"] = "succeeded"
+                job["result"] = result
+                job["updated_at"] = datetime.now(UTC).isoformat()
+    finally:
+        _federation_sync_tasks.pop(job_id, None)
+
+
+async def _perform_federation_sync(
+    config_id: str,
+    source: str | None,
+    submitted_by: str,
+    repo: FederationConfigRepositoryBase,
 ) -> dict[str, Any]:
-    """
-    Manually trigger federation sync to import servers/agents from configured sources.
+    """Import records from the configured federation sources."""
+    logger.info("Running federation sync job for user %s: %s", submitted_by, config_id)
 
-    Args:
-        config_id: Configuration ID to use for sync (default: "default")
-        source: Optional source filter ("anthropic", "asor", or "aws_registry"). If None, syncs all enabled sources.
-        user_context: Authenticated user context
-        repo: Federation config repository
-
-    Returns:
-        Sync results with counts of synced items
-
-    Example:
-        Sync all enabled federations:
-        ```bash
-        POST /api/federation/sync
-        ```
-
-        Sync only Anthropic:
-        ```bash
-        POST /api/federation/sync?source=anthropic
-        ```
-    """
-    _check_federation_management_scope(user_context)
-
-    # Set audit action for federation sync
-    set_audit_action(
-        request,
-        "sync",
-        "federation",
-        resource_id=config_id,
-        description=f"Sync federation from {source or 'all sources'}",
-    )
-
-    logger.info(f"User {user_context['username']} triggering federation sync: {config_id}")
-
-    # Get federation config
     config = await repo.get_config(config_id)
     if not config:
         raise HTTPException(
@@ -1030,14 +1039,13 @@ async def sync_federation(
             detail=f"Federation config '{config_id}' not found",
         )
 
-    # Defense-in-depth SSRF check: re-validate endpoints before any outbound
-    # request, in case a config was persisted before write-time validation.
     _validate_federation_endpoints(config)
 
     try:
         # Import federation clients
         from ..services.federation.anthropic_client import AnthropicFederationClient
         from ..services.federation.asor_client import AsorFederationClient
+        from ..services.server_service import server_service
 
         results: dict[str, Any] = {
             "anthropic": {"servers": [], "count": 0},
@@ -1286,7 +1294,7 @@ async def sync_federation(
                 server_service=server_service,
                 server_repo=server_repo,
                 nginx_service=nginx_svc,
-                audit_username=user_context.get("username"),
+                audit_username=submitted_by,
             )
             if reconciliation_result.get("removed"):
                 logger.info(
@@ -1310,10 +1318,134 @@ async def sync_federation(
 
     except Exception as e:
         logger.error(f"Federation sync failed: {e}", exc_info=True)
+        raise RuntimeError("Federation sync failed") from e
+
+
+@router.post(
+    "/federation/sync",
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["federation"],
+    summary="Queue a manual federation sync",
+)
+async def sync_federation(
+    request: Request,
+    config_id: str = "default",
+    source: str | None = None,
+    user_context: Annotated[dict, Depends(nginx_proxied_auth)] = None,
+    repo: FederationConfigRepositoryBase = Depends(_get_federation_repo),
+    _csrf: Annotated[None, Depends(verify_csrf_token_flexible)] = None,
+) -> dict[str, Any]:
+    """
+    Manually trigger federation sync to import servers/agents from configured sources.
+
+    Args:
+        config_id: Configuration ID to use for sync (default: "default")
+        source: Optional source filter ("anthropic", "asor", or "aws_registry"). If None, syncs all enabled sources.
+        user_context: Authenticated user context
+        repo: Federation config repository
+
+    Returns:
+        A queued job identifier and status URL.
+
+    Example:
+        Sync all enabled federations:
+        ```bash
+        POST /api/federation/sync
+        ```
+
+        Sync only Anthropic:
+        ```bash
+        POST /api/federation/sync?source=anthropic
+        ```
+    """
+    _check_federation_management_scope(user_context)
+
+    # Set audit action for federation sync
+    set_audit_action(
+        request,
+        "sync",
+        "federation",
+        resource_id=config_id,
+        description=f"Sync federation from {source or 'all sources'}",
+    )
+
+    logger.info(f"User {user_context['username']} triggering federation sync: {config_id}")
+
+    # Get federation config before accepting the job so invalid configuration
+    # IDs and unsafe endpoints fail synchronously.
+    config = await repo.get_config(config_id)
+    if not config:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Federation sync failed",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Federation config '{config_id}' not found",
         )
+
+    # Defense-in-depth SSRF check: re-validate endpoints before any outbound
+    # request, in case a config was persisted before write-time validation.
+    _validate_federation_endpoints(config)
+
+    job_id = uuid4().hex
+    submitted_by = user_context["username"]
+    now = datetime.now(UTC).isoformat()
+    async with _federation_sync_jobs_lock:
+        active_job = next(
+            (
+                job
+                for job in _federation_sync_jobs.values()
+                if job["config_id"] == config_id
+                and job["source"] == source
+                and job["status"] in {"queued", "running"}
+            ),
+            None,
+        )
+        if active_job:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Federation sync already running (job {active_job['job_id']})",
+            )
+        _federation_sync_jobs[job_id] = {
+            "job_id": job_id,
+            "status": "queued",
+            "config_id": config_id,
+            "source": source,
+            "submitted_by": submitted_by,
+            "created_at": now,
+            "updated_at": now,
+        }
+        _federation_sync_tasks[job_id] = asyncio.create_task(
+            _run_federation_sync_job(
+                job_id=job_id,
+                config_id=config_id,
+                source=source,
+                submitted_by=submitted_by,
+                repo=repo,
+            )
+        )
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "status_url": f"/api/federation/sync/{job_id}",
+    }
+
+
+@router.get("/federation/sync/{job_id}", tags=["federation"], summary="Get federation sync status")
+async def get_federation_sync_status(
+    job_id: str,
+    user_context: Annotated[dict, Depends(nginx_proxied_auth)] = None,
+) -> dict[str, Any]:
+    """Return the status and result of a queued federation sync."""
+    _check_federation_management_scope(user_context)
+    async with _federation_sync_jobs_lock:
+        job = _federation_sync_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync job not found")
+        if not user_context.get("is_admin", False) and job["submitted_by"] != user_context["username"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view federation sync jobs you submitted",
+            )
+        return dict(job)
 
 
 # ---------------------------------------------------------------------------

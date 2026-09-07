@@ -88,10 +88,12 @@ const ExternalRegistriesSection: React.FC<ExternalRegistriesSectionProps> = ({
       {nothingToShow ? (
         <div className="text-center py-12 bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
           <div className="text-gray-400 text-lg mb-2">
-            {hasAnyExternal ? 'No Results Found' : 'No External Registries Available'}
+            {hasAnyExternal || availableSources.length > 0
+              ? 'No Results Found'
+              : 'No External Registries Available'}
           </div>
           <p className="text-gray-500 dark:text-gray-300 text-sm max-w-md mx-auto">
-            {hasAnyExternal
+            {hasAnyExternal || availableSources.length > 0
               ? 'Press Enter in the search bar to search semantically'
               : 'External registry integrations (Anthropic, AWS Agents, and more) will appear here when configured'}
           </p>

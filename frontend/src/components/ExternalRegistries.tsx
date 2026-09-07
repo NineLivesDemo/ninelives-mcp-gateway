@@ -136,6 +136,15 @@ interface SyncResults {
   aws_registry: { count: number; servers: string[]; agents: string[]; skills: string[] };
 }
 
+interface FederationSyncJob {
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  result?: {
+    total_synced?: number;
+    results?: SyncResults;
+  };
+  error?: string;
+}
+
 
 /**
  * Format a relative time string from an ISO timestamp.
@@ -156,6 +165,23 @@ function _formatRelativeTime(dateString: string | null | undefined): string {
   if (diffDays < 7) return `${diffDays}d ago`;
 
   return date.toLocaleDateString();
+}
+
+
+async function _waitForFederationSync(statusUrl: string): Promise<FederationSyncJob> {
+  const maxAttempts = 300;
+  const pollIntervalMs = 2000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await axios.get<FederationSyncJob>(statusUrl);
+    const job = response.data;
+    if (job.status === 'succeeded' || job.status === 'failed') {
+      return job;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error('Federation sync is still running; check the External Registries page later');
 }
 
 
@@ -236,14 +262,18 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
         );
       } else {
         const response = await axios.post(`/api/federation/sync?source=${source}`);
-        const data = response.data;
+        const job = await _waitForFederationSync(response.data.status_url);
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'Federation sync failed');
+        }
+        const data = job.result || {};
         const totalSynced = data.total_synced || 0;
         setLastSyncTime(new Date().toISOString());
         setLastSyncResults(data.results || null);
         onShowToast(`Sync completed: ${totalSynced} items synced from ${source}`, 'success');
       }
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'Sync failed';
+      const detail = err?.response?.data?.detail || err?.message || 'Sync failed';
       onShowToast(`Sync failed for ${source}: ${detail}`, 'error');
     } finally {
       setSyncing(null);
@@ -257,13 +287,17 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
     setSyncing('all');
     try {
       const response = await axios.post('/api/federation/sync');
-      const data = response.data;
+      const job = await _waitForFederationSync(response.data.status_url);
+      if (job.status === 'failed') {
+        throw new Error(job.error || 'Federation sync failed');
+      }
+      const data = job.result || {};
       const totalSynced = data.total_synced || 0;
       setLastSyncTime(new Date().toISOString());
       setLastSyncResults(data.results || null);
       onShowToast(`Sync completed: ${totalSynced} total items synced`, 'success');
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'Sync failed';
+      const detail = err?.response?.data?.detail || err?.message || 'Sync failed';
       onShowToast(`Sync failed: ${detail}`, 'error');
     } finally {
       setSyncing(null);
