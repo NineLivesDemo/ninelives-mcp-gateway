@@ -212,6 +212,7 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
   const [confirmDelete, setConfirmDelete] = useState<{
     source: 'aws_registry' | 'anthropic' | 'asor' | 'ai_catalog';
     identifier: string;
+    removeSource: boolean;
   } | null>(null);
 
   /**
@@ -311,7 +312,15 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
     source: 'aws_registry' | 'anthropic' | 'asor' | 'ai_catalog',
     identifier: string,
   ) => {
-    setConfirmDelete({ source, identifier });
+    setConfirmDelete({ source, identifier, removeSource: false });
+  };
+
+  const handleRemoveSource = (source: 'anthropic') => {
+    setConfirmDelete({
+      source,
+      identifier: 'Anthropic federation',
+      removeSource: true,
+    });
   };
 
   /**
@@ -320,10 +329,12 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
   const executeDelete = async () => {
     if (!confirmDelete) return;
 
-    const { source, identifier } = confirmDelete;
-    setDeletingItem(identifier);
+    const { source, identifier, removeSource } = confirmDelete;
+    setDeletingItem(removeSource ? source : identifier);
     try {
-      if (source === 'anthropic') {
+      if (removeSource) {
+        await axios.delete(`/api/federation/config/default/${source}`);
+      } else if (source === 'anthropic') {
         await axios.delete(
           `/api/federation/config/default/anthropic/servers/${encodeURIComponent(identifier)}`
         );
@@ -340,7 +351,10 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
           `/api/federation/config/default/ai_catalog/sources/${encodeURIComponent(identifier)}`
         );
       }
-      onShowToast(`Removed "${identifier}"`, 'success');
+      onShowToast(
+        removeSource ? `Removed ${identifier} and all imported servers` : `Removed "${identifier}"`,
+        'success',
+      );
       fetchConfig();
     } catch (err: any) {
       const detail = err?.response?.data?.detail || 'Failed to remove entry';
@@ -451,6 +465,7 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
           config.anthropic, syncing, lastSyncResults, handleSync,
           () => setAddModalSource('anthropic'),
           (name) => handleDeleteEntry('anthropic', name),
+          () => handleRemoveSource('anthropic'),
           deletingItem,
         )}
 
@@ -489,7 +504,11 @@ const ExternalRegistries: React.FC<ExternalRegistriesProps> = ({ onShowToast }) 
           onClose={() => setConfirmDelete(null)}
           onConfirm={executeDelete}
           title="Remove Entry"
-          message={`Are you sure you want to remove "${confirmDelete.identifier}"? Any servers, agents, and skills synced from this source will also be deregistered.`}
+          message={
+            confirmDelete.removeSource
+              ? 'This will disable Anthropic federation and deregister every server imported from it.'
+              : `Are you sure you want to remove "${confirmDelete.identifier}"? Any servers, agents, and skills synced from this source will also be deregistered.`
+          }
           confirmLabel="Remove"
           isDestructive={true}
           isLoading={deletingItem !== null}
@@ -708,6 +727,7 @@ function _renderAnthropicCard(
   onSync: (source: string) => void,
   onAdd: () => void,
   onRemove: (serverName: string) => void,
+  onRemoveSource: () => void,
   deletingItem: string | null,
 ): React.ReactNode {
   return (
@@ -765,6 +785,17 @@ function _renderAnthropicCard(
             >
               <ArrowPathIcon className={`h-4 w-4 mr-1.5 ${syncing === 'anthropic' ? 'animate-spin' : ''}`} />
               {syncing === 'anthropic' ? 'Syncing...' : 'Sync'}
+            </button>
+            <button
+              onClick={onRemoveSource}
+              disabled={syncing !== null || deletingItem === 'anthropic'}
+              className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg
+                         border border-red-300 dark:border-red-700 text-red-700
+                         dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20
+                         disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <XMarkIcon className="h-4 w-4 mr-1.5" />
+              Remove source
             </button>
           </div>
         )}

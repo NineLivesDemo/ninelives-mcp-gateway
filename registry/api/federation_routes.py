@@ -560,6 +560,59 @@ async def remove_anthropic_server(
     }
 
 
+@router.delete(
+    "/federation/config/{config_id}/anthropic",
+    tags=["federation"],
+    summary="Remove Anthropic federation source",
+)
+async def remove_anthropic_source(
+    request: Request,
+    config_id: str,
+    user_context: Annotated[dict, Depends(nginx_proxied_auth)] = None,
+    repo: FederationConfigRepositoryBase = Depends(_get_federation_repo),
+    _csrf: Annotated[None, Depends(verify_csrf_token_flexible)] = None,
+) -> dict[str, Any]:
+    """Disable Anthropic federation and remove all imported servers."""
+    _check_federation_management_scope(user_context)
+    set_audit_action(
+        request,
+        "delete",
+        "federation",
+        resource_id=config_id,
+        description="Remove Anthropic federation source",
+    )
+
+    config = await repo.get_config(config_id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Federation config '{config_id}' not found",
+        )
+
+    config.anthropic.enabled = False
+    config.anthropic.servers = []
+    saved_config = await repo.save_config(config, config_id)
+
+    from ..core.nginx_service import nginx_service
+    from ..repositories.factory import get_server_repository
+    from ..services.federation_reconciliation import reconcile_anthropic_servers
+    from ..services.server_service import server_service
+
+    reconciliation = await reconcile_anthropic_servers(
+        config=saved_config,
+        server_service=server_service,
+        server_repo=get_server_repository(),
+        nginx_service=nginx_service,
+        audit_username=user_context.get("username"),
+    )
+
+    return {
+        "message": "Anthropic federation source removed",
+        "config": saved_config.model_dump(),
+        "reconciliation": reconciliation,
+    }
+
+
 @router.post(
     "/federation/config/{config_id}/asor/agents",
     tags=["federation"],
