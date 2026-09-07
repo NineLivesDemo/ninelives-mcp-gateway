@@ -38,6 +38,22 @@ def _openbao_backend(monkeypatch):
 
 @pytest.mark.unit
 class TestSecretStoreFactory:
+    def test_reads_openbao_token_from_file(self, monkeypatch, tmp_path):
+        token_file = tmp_path / "client_token"
+        token_file.write_text("file-token\n", encoding="utf-8")
+        monkeypatch.setenv("OPENBAO_TOKEN_FILE", str(token_file))
+        monkeypatch.setenv("OPENBAO_TOKEN", "environment-token")
+
+        assert factory._read_openbao_token() == "file-token"
+
+    def test_missing_openbao_token_file_fails_closed(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENBAO_TOKEN_FILE", str(tmp_path / "missing"))
+        monkeypatch.delenv("OPENBAO_TOKEN", raising=False)
+        monkeypatch.delenv("VAULT_TOKEN", raising=False)
+
+        with pytest.raises(ValueError, match="cannot be read"):
+            factory._read_openbao_token()
+
     def test_builds_configured_backend(self, _openbao_backend):
         store = factory.get_secret_store()
         assert isinstance(store, SecretStoreBase)

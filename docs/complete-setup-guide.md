@@ -20,7 +20,7 @@ This guide provides a comprehensive, step-by-step walkthrough for setting up the
 5. [Setting Up Keycloak Identity Provider](#5-setting-up-keycloak-identity-provider)
 6. [Starting the MCP Gateway Services](#6-starting-the-mcp-gateway-services)
 7. [Storage Backend Setup](#7-storage-backend-setup-optional)
-   - [MongoDB CE Setup (Recommended)](#mongodb-ce-setup-recommended-for-local-development)
+   - [MongoDB Atlas Setup (Recommended)](#mongodb-atlas-setup-recommended-for-local-development)
 8. [Verification and Testing](#8-verification-and-testing)
 9. [Configuring AI Agents and Coding Assistants](#9-configuring-ai-agents-and-coding-assistants)
 10. [Troubleshooting](#10-troubleshooting)
@@ -573,7 +573,7 @@ You should see the Keycloak login page. You can log in with:
 
 ### Build and Start All Services
 
-**Important**: After starting services, you MUST complete [Section 7: Storage Backend Setup](#7-storage-backend-setup-optional) before using JWT token generation from the UI. The MongoDB initialization loads required scopes that enable JWT token creation.
+**Important**: After starting services, you MUST complete [Section 7: Storage Backend Setup](#7-storage-backend-setup-optional) before using JWT token generation from the UI. The host-side Atlas initializer loads required scopes that enable JWT token creation.
 
 ```bash
 # Return to project directory
@@ -637,71 +637,37 @@ curl http://localhost/health
 
 The MCP Gateway Registry supports multiple storage backends for production and development use.
 
-**DEPRECATION WARNING**: The file-based storage backend is deprecated and will be removed in a future release. MongoDB CE is now the recommended approach for local development.
+**DEPRECATION WARNING**: The file-based storage backend is deprecated and will be removed in a future release. MongoDB Atlas is now the recommended approach for local development.
 
 **Storage Backend Options:**
-- **MongoDB CE**: Recommended for local development (see below)
+- **MongoDB Atlas**: Recommended for local development
 - **DocumentDB**: Used automatically in production (AWS ECS/EKS deployments)
 - **File-based**: Deprecated - will be removed in future releases
 
-### MongoDB CE Setup (Recommended for Local Development)
+### MongoDB Atlas Setup (Recommended for Local Development)
 
-**Note**: This section is for local Docker Compose installations using MongoDB Community Edition 8.2. For AWS ECS deployments, DocumentDB is used and initialized automatically.
-
-MongoDB CE provides a production-like environment for local development with replica set support and application-level vector search capabilities.
-
-**Why use MongoDB CE (Recommended):**
-- Production-like environment for local development
-- Testing production workflows locally
-- Multi-instance development environments
-- Feature development requiring database operations
-- Compatibility with DocumentDB for seamless cloud migration
-
-**Setup MongoDB CE:**
+Use a separate Atlas database for local development and a different Atlas database with separate credentials and network rules for Azure.
 
 ```bash
-# 1. Set storage backend in .env
-echo "STORAGE_BACKEND=mongodb-ce" >> .env
-echo "DOCUMENTDB_HOST=mongodb" >> .env
-echo "DOCUMENTDB_PORT=27017" >> .env
-echo "DOCUMENTDB_DATABASE=mcp_registry" >> .env
-echo "DOCUMENTDB_NAMESPACE=default" >> .env
-echo "DOCUMENTDB_USE_TLS=false" >> .env
+# Set STORAGE_BACKEND=mongodb-atlas and MONGODB_CONNECTION_STRING in .env,
+# then initialize the managed database from the host.
+set -a
+source .env
+set +a
+uv run python scripts/init-mongodb-ce.py
 
-# 2. Start MongoDB container
-docker compose up -d mongodb
-
-# 3. Wait for MongoDB to be ready (about 30 seconds for replica set initialization)
-sleep 30
-
-# 4. Initialize collections and indexes
-docker compose up mongodb-init
-
-# 5. Verify MongoDB setup
-docker exec mcp-mongodb mongosh --eval "use mcp_registry; show collections"
-
-# Expected output should show:
-# - mcp_servers_default
-# - mcp_agents_default
-# - mcp_scopes_default
-# - mcp_embeddings_1536_default
-# - mcp_security_scans_default
-# - mcp_federation_config_default
-
-# 6. Restart auth-server and registry to load scopes and use MongoDB backend
+# Restart auth-server and registry to load scopes
 docker compose restart auth-server registry
 ```
 
-**Important**: The auth-server must be restarted after mongodb-init to load the JWT token scopes from MongoDB. Without this step, JWT token generation from the UI will fail with "no scopes configured" error.
+**Important**: The auth-server must be restarted after initialization to load the JWT token scopes from MongoDB. Without this step, JWT token generation from the UI will fail with "no scopes configured" error.
 
-**MongoDB CE Features:**
-- Replica set configuration for production-like testing
+**MongoDB Atlas Features:**
+- Managed replica set and persistent storage
 - Automatic collection and index management
 - Application-level vector search for semantic queries
 - Multi-namespace support for tenant isolation
-- Compatible with DocumentDB API for seamless cloud migration
-
-For detailed MongoDB CE architecture and configuration options, see [Storage Architecture Documentation](design/storage-architecture-mongodb-documentdb.md).
+- Separate local and Azure databases prevent environment cross-contamination
 
 ---
 

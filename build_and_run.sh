@@ -382,13 +382,6 @@ ensure_secret SECRET_KEY 32
 # both services.
 ensure_secret AUTH_SERVER_NGINX_MARKER_SECRET 32
 
-# DOCUMENTDB_PASSWORD: the local MongoDB container runs with --auth and creates
-# its root user from this value on first boot, so it must never be a weak default
-# like "admin". NOTE: this only helps a first-time install. If MongoDB was
-# already initialized with a different password (existing data volume), set
-# DOCUMENTDB_PASSWORD to that value or recreate the mongodb-data volume.
-ensure_secret DOCUMENTDB_PASSWORD 24
-
 # METRICS_KEY_PEPPER: the metrics-service peppers stored API-key hashes with this
 # value and refuses to start unless it is present and high-entropy. NOTE:
 # rotating this value invalidates all existing API-key hashes -- re-issue metrics
@@ -474,18 +467,12 @@ _lc_var() {
 
 # Reject known-weak default values for secrets that could reach a deployment.
 # Compose fails fast on unset required secrets via ${VAR:?...}, but a value
-# explicitly set to a historical default (e.g. DOCUMENTDB_PASSWORD=admin,
-# OPENBAO_TOKEN=dev-root-token) or to a shipped .env.example placeholder would
+# explicitly set to a historical default (e.g. OPENBAO_TOKEN=dev-root-token)
+# or to a shipped .env.example placeholder would
 # pass that presence check while still being a guessable credential. Fail closed
 # here before starting anything. Comparisons are case-insensitive.
 _validate_secret_defaults() {
     local failed=0
-
-    if [ "$(_lc_var DOCUMENTDB_PASSWORD)" = "admin" ]; then
-        log "ERROR: DOCUMENTDB_PASSWORD is set to the known-weak default 'admin'."
-        log "       Set a strong random value in .env (e.g. openssl rand -hex 24)."
-        failed=1
-    fi
 
     if [ "$(_lc_var OPENBAO_TOKEN)" = "dev-root-token" ]; then
         log "ERROR: OPENBAO_TOKEN is set to the known-weak default 'dev-root-token'."
@@ -531,6 +518,14 @@ _validate_secret_defaults() {
     return $failed
 }
 
+_validate_required_config() {
+    if [ -z "${MONGODB_CONNECTION_STRING:-}" ]; then
+        log "ERROR: MONGODB_CONNECTION_STRING is required for the Atlas-backed deployment."
+        log "       Set it in .env or provide it through the secret-management workflow."
+        return 1
+    fi
+}
+
 # Preflight validation for extra_env files (Issue #1000).
 # Source scripts/validate-extra-env.sh so the same collision logic is shared
 # with CI and pre-commit hooks.
@@ -543,6 +538,7 @@ validate_predeployment() {
     source "$script_dir/scripts/validate-extra-env.sh"
 
     validate_extra_env_all || exit 1
+    _validate_required_config || exit 1
     _validate_secret_defaults || exit 1
 
     log "Predeployment validations passed."
@@ -706,13 +702,17 @@ log "To view logs for a specific service: $COMPOSE_CMD $COMPOSE_FILES logs -f <s
 log "To stop services: $COMPOSE_CMD $COMPOSE_FILES down"
 log ""
 
-# Ask if user wants to follow logs
-read -p "Do you want to follow the logs? (y/n): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    log "Following container logs (press Ctrl+C to stop following logs without stopping the services):"
-    echo "---------- CONTAINER LOGS ----------"
-    $COMPOSE_CMD $COMPOSE_FILES logs -f
+# Ask if user wants to follow logs only when a terminal is available.
+if [[ -t 0 && -t 1 ]]; then
+    read -p "Do you want to follow the logs? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log "Following container logs (press Ctrl+C to stop following logs without stopping the services):"
+        echo "---------- CONTAINER LOGS ----------"
+        $COMPOSE_CMD $COMPOSE_FILES logs -f
+    else
+        log "Services are running in the background. Use '$COMPOSE_CMD $COMPOSE_FILES logs -f' to view logs."
+    fi
 else
-    log "Services are running in the background. Use '$COMPOSE_CMD $COMPOSE_FILES logs -f' to view logs."
+    log "Non-interactive terminal detected; services are running in the background."
 fi

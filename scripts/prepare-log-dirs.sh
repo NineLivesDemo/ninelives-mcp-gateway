@@ -35,8 +35,13 @@ if [ ! -d "${LOG_BASE}" ]; then
     ${SUDO} mkdir -p "${LOG_BASE}"
 fi
 
-${SUDO} chown -R "${OWNER_UID}:${OWNER_GID}" "${LOG_BASE}"
-${SUDO} chmod "${DIR_MODE}" "${LOG_BASE}"
+if [ "$(stat -c '%u:%g' "${LOG_BASE}")" != "${OWNER_UID}:${OWNER_GID}" ]; then
+    ${SUDO} chown -R "${OWNER_UID}:${OWNER_GID}" "${LOG_BASE}"
+fi
+
+if [ "$(stat -c '%a' "${LOG_BASE}")" != "${DIR_MODE#0}" ]; then
+    ${SUDO} chmod "${DIR_MODE}" "${LOG_BASE}"
+fi
 
 echo "OK: ${LOG_BASE} prepared"
 ls -ld "${LOG_BASE}"

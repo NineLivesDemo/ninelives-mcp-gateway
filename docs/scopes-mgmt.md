@@ -454,7 +454,7 @@ uv run python api/registry_management.py \
 ### Bootstrap Admin Scope
 
 The `registry-admins` scope is automatically loaded during database initialization:
-- **Local (MongoDB CE)**: `docker compose up mongodb-init`
+- **MongoDB Atlas**: `uv run python scripts/init-mongodb-ce.py`
 - **Production (DocumentDB)**: `./terraform/aws-ecs/scripts/run-documentdb-init.sh`
 
 ### Server Path Variations

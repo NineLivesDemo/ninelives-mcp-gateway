@@ -1,0 +1,16 @@
+routes:
+  - id: registry
+    uri: /*
+    upstream:
+      type: roundrobin
+      pass_host: pass
+      nodes:
+        "registry:8080": 1
+    plugins:
+      limit-count:
+        count: 120
+        time_window: 60
+        rejected_code: 429
+        key: remote_addr
+        policy: local
+#END

@@ -15,10 +15,6 @@
 # and works without any registry authentication.
 
 services:
-  mongodb:
-    image: dhi.io/mongodb:8-debian13-dev
-    command: ["--replSet", "rs0", "--bind_ip", "127.0.0.1,mongodb"]
-
   prometheus:
     image: dhi.io/prometheus:3.9
     user: "nobody"

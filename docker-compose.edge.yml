@@ -1,0 +1,72 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd@sha256:0934690612905554eb61ddefb9faaaecb47c2f6931dbb453e694358092ee8990
+    container_name: mcp-apisix-etcd
+    profiles:
+      - edge
+    environment:
+      ETCD_NAME: apisix-etcd
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_INITIAL_CLUSTER: apisix-etcd=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: mcp-gateway-apisix
+      ETCDCTL_API: "3"
+      ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
+    volumes:
+      - apisix-etcd-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  apisix-bootstrap:
+    image: curlimages/curl@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+    container_name: mcp-apisix-bootstrap
+    profiles:
+      - edge
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?Set APISIX_ADMIN_KEY in .env before starting the edge profile}
+    entrypoint: ["/bin/sh"]
+    command: ["/usr/local/bin/apisix-local-bootstrap.sh"]
+    volumes:
+      - ./docker/apisix/registry-route.json:/config/registry-route.json:ro
+      - ./scripts/apisix-local-bootstrap.sh:/usr/local/bin/apisix-local-bootstrap.sh:ro
+    depends_on:
+      apisix:
+        condition: service_started
+    restart: "no"
+
+  # Apache APISIX is kept as a separate edge layer so it can route future
+  # web applications alongside the Registry.
+  apisix:
+    image: docker.io/apache/apisix@sha256:84e6b5e787e9f889ebff88161cb9a16599bafcffa236c6b54c7f779a0655940d
+    container_name: mcp-apisix
+    profiles:
+      - edge
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?Set APISIX_ADMIN_KEY in .env before starting the edge profile}
+    ports:
+      - "${APISIX_BIND_IP:-127.0.0.1}:${APISIX_HTTP_PORT:-19080}:9080"
+      - "${APISIX_ADMIN_BIND_IP:-127.0.0.1}:${APISIX_ADMIN_PORT:-19180}:9180"
+    volumes:
+      - ./docker/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      registry:
+        condition: service_started
+      etcd:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  apisix-etcd-data:

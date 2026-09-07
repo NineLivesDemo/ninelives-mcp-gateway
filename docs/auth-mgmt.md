@@ -148,7 +148,7 @@ The `registry-admins` scope is automatically loaded during database initializati
 ```
 
 This is loaded by the database initialization scripts:
-- **Local (MongoDB CE)**: `docker compose up mongodb-init` runs `scripts/init-mongodb-ce.py`
+- **MongoDB Atlas**: `uv run python scripts/init-mongodb-ce.py`
 - **Production (DocumentDB)**: `./terraform/aws-ecs/scripts/run-documentdb-init.sh` runs `scripts/init-documentdb-indexes.py`
 - **Entra ID**: `./terraform/aws-ecs/scripts/run-documentdb-init.sh --entra-group-id "your-group-object-id"`
 

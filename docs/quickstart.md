@@ -103,6 +103,7 @@ nano .env
 AUTH_PROVIDER=keycloak
 
 # Set secure passwords (CHANGE THESE!)
+APISIX_ADMIN_KEY=YOUR_APISIX_ADMIN_KEY_AT_LEAST_32_CHARS
 KEYCLOAK_ADMIN_PASSWORD=YourSecureAdminPassword123!
 INITIAL_ADMIN_PASSWORD=YourSecureAdminPassword123!  # MUST match KEYCLOAK_ADMIN_PASSWORD
 KEYCLOAK_DB_PASSWORD=SecureKeycloakDB123!
@@ -127,6 +128,9 @@ sed -i "s/^#*\s*SECRET_KEY=.*/SECRET_KEY=$SECRET_KEY/" .env
 echo "Generated SECRET_KEY: $SECRET_KEY"
 ```
 
+Replace the example `APISIX_ADMIN_KEY` with at least 32 random letters, digits,
+underscores, or hyphens before starting the stack.
+
 Save and exit (Ctrl+X, then Y, then Enter if using nano).
 
 </details>
@@ -144,11 +148,11 @@ export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 ## Step 4: Deploy with Pre-built Images
 
 ```bash
-./build_and_run.sh --prebuilt
+./scripts/local-stack.sh start
 ```
 
 > **Port Differences:**
-> - **Docker**: Services run on privileged ports (`http://localhost`, `https://localhost`)
+> - **Docker**: The Registry front door is APISIX at `http://127.0.0.1:19080`
 > - **Podman**: Services run on non-privileged ports (`http://localhost:8080`, `https://localhost:8443`)
 
 Once the build completes and you see the container logs streaming, you can press **Ctrl+C** to exit the log view and continue with the next steps. The containers will continue running in the background.
@@ -161,17 +165,16 @@ docker compose ps
 
 ---
 
-## Step 5: Initialize MongoDB
+## Step 5: Initialize MongoDB Atlas
 
-Initialize the MongoDB database with required collections, indexes, and default scopes:
+Initialize the configured Atlas database with required collections, indexes, and default scopes:
 
 ```bash
-# Run the MongoDB initialization container
-docker compose up mongodb-init
-
-# Verify collections were created
-docker exec mcp-mongodb mongosh --eval "use mcp_registry; show collections"
-# Should show: mcp_servers_default, mcp_agents_default, mcp_scopes_default, etc.
+# Run the initializer from the host using the URI in .env
+set -a
+source .env
+set +a
+uv run python scripts/init-mongodb-ce.py
 
 # Restart auth-server to load the new scopes
 docker compose restart auth-server
@@ -227,7 +230,7 @@ nano .env
 **6g. Recreate containers to apply new credentials:**
 ```bash
 # Recreate containers to pick up the updated .env values
-./build_and_run.sh --prebuilt
+./scripts/local-stack.sh start
 ```
 Once logs are streaming, press **Ctrl+C** to exit - containers will continue running.
 

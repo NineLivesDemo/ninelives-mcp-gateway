@@ -280,24 +280,24 @@ For Helm deployments, use `ExistingSecret` fields to inject credentials from Kub
 
 ### Storage Backend Configuration
 
-The MCP Gateway Registry supports three storage backends for servers, agents, and scopes management.
+The MCP Gateway Registry supports file, MongoDB-compatible, and DocumentDB storage backends for servers, agents, and scopes management. The Compose workflow uses an externally managed MongoDB Atlas database.
 
 | Variable | Description | Values | Default |
 |----------|-------------|--------|---------|
-| `STORAGE_BACKEND` | Storage backend for registry data | `file`, `mongodb-ce`, or `documentdb` | `file` |
+| `STORAGE_BACKEND` | Storage backend for registry data | `file`, `mongodb-atlas`, `mongodb-ce`, or `documentdb` | `file` |
 
-> **⚠️ DEPRECATION WARNING:** File-based storage is deprecated and will be removed in a future release. MongoDB CE is now the recommended backend for local development and testing.
+> **DEPRECATION WARNING:** File-based storage is deprecated and will be removed in a future release. MongoDB Atlas is the recommended backend for local development and testing.
 
 **Backend Options:**
 
 #### File Backend (Deprecated)
 - **Status**: **DEPRECATED** - Will be removed in a future release
-- **Migration Path**: Switch to MongoDB CE for local development or DocumentDB for production
+- **Migration Path**: Switch to MongoDB Atlas for local development or DocumentDB for production
 - **Pros**: Simple, no external dependencies, human-readable JSON files
 - **Cons**: Limited concurrent writes, no distributed access, no native vector search, **deprecated**
 
 ```bash
-STORAGE_BACKEND=file  # DEPRECATED - Use mongodb-ce instead
+STORAGE_BACKEND=file  # DEPRECATED - Use mongodb-atlas instead
 ```
 
 **Data stored in:**
@@ -305,19 +305,17 @@ STORAGE_BACKEND=file  # DEPRECATED - Use mongodb-ce instead
 - Agents: `~/mcp-gateway/agents/*.json`
 - Security scans: `~/mcp-gateway/security_scans/*.json`
 
-#### MongoDB CE Backend (Recommended for Local Development)
-- **Status**: **RECOMMENDED** for all local development and testing
-- **Best for**: Local development, feature development, testing, CI/CD pipelines
-- **Pros**: Docker-based, no cloud dependencies, replica set support, application-level vector search, production-like environment
-- **Cons**: Limited to ~10,000 documents, O(n) vector search performance (acceptable for development)
+#### MongoDB Atlas Backend (Recommended for Local Development)
+- **Status**: **RECOMMENDED** for local development and testing
+- **Best for**: Local development, feature development, and testing against a managed MongoDB-compatible service
+- **Pros**: No local database container, persistent managed storage, replica set support, and the same connection model used in Azure
+- **Cons**: Requires Atlas network access and separate credentials for each environment
 
 ```bash
-STORAGE_BACKEND=mongodb-ce
-DOCUMENTDB_HOST=mongodb       # Docker service name
-DOCUMENTDB_PORT=27017
+STORAGE_BACKEND=mongodb-atlas
+MONGODB_CONNECTION_STRING='mongodb+srv://YOUR_USER:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/mcp_registry?retryWrites=true&w=majority'
 DOCUMENTDB_DATABASE=mcp_registry
 DOCUMENTDB_NAMESPACE=default
-DOCUMENTDB_USE_TLS=false      # No TLS for local dev
 ```
 
 **MongoDB Collections Created:**
@@ -327,24 +325,6 @@ DOCUMENTDB_USE_TLS=false      # No TLS for local dev
 - `mcp_embeddings_1536_{namespace}` - Vector embeddings (1536 dimensions)
 - `mcp_security_scans_{namespace}` - Security scan results
 - `mcp_federation_config_{namespace}` - Federation configuration
-
-**First-Time MongoDB CE Setup:**
-
-```bash
-# 1. Start MongoDB container
-docker-compose up -d mongodb
-sleep 5
-
-# 2. Initialize collections and indexes
-docker-compose up mongodb-init
-
-# 3. Verify setup
-docker exec mcp-mongodb mongosh --eval "use mcp_registry; show collections"
-
-# 4. Switch backend and restart
-export STORAGE_BACKEND=mongodb-ce
-docker-compose restart registry
-```
 
 #### DocumentDB Backend (Production, Recommended)
 - **Best for**: Production deployments, high concurrency, large-scale systems
@@ -365,7 +345,7 @@ DOCUMENTDB_REPLICA_SET=rs0
 ```
 
 **DocumentDB Collections Created:**
-Same as MongoDB CE (above), but with native HNSW vector indexes for sub-100ms semantic search.
+Same as MongoDB Atlas (above), but with native HNSW vector indexes for sub-100ms semantic search.
 
 **First-Time DocumentDB Setup:**
 
@@ -391,14 +371,14 @@ For MongoDB Atlas or any MongoDB cluster you manage yourself, set `MONGODB_CONNE
 
 ```bash
 # MongoDB Atlas example
-export STORAGE_BACKEND=mongodb-ce
+export STORAGE_BACKEND=mongodb-atlas
 export MONGODB_CONNECTION_STRING='mongodb+srv://user:password@cluster0.abc123.mongodb.net/mcp_registry?retryWrites=true&w=majority'
 export DOCUMENTDB_DATABASE=mcp_registry
 export DOCUMENTDB_NAMESPACE=default
 ```
 
 **Notes:**
-- `STORAGE_BACKEND=mongodb-ce` is the correct value for Atlas — it is wire-compatible MongoDB.
+- `STORAGE_BACKEND=mongodb-atlas` is the explicit Atlas alias for the wire-compatible MongoDB repository.
 - The registry **never logs the full URI** and the health endpoint extracts only the hostname (via `urllib.parse.urlsplit`, no DNS, no userinfo).
 - Do **not** set `STORAGE_BACKEND=documentdb` when pointing at Atlas; that backend selects SCRAM-SHA-1 for the discrete-vars path (used only when `MONGODB_CONNECTION_STRING` is unset) and hardcodes `retryWrites=False`.
 - For Helm, set `mongodb.connectionString` (see `charts/mongodb-configure/values.yaml`). For externally-managed MongoDB, also set `mongodb.enabled: false` at the stack level to skip the in-cluster MongoDB operator.
@@ -406,7 +386,7 @@ export DOCUMENTDB_NAMESPACE=default
 - The replica-set initialization job (`mongodb-configure`) automatically skips `replSetInitiate` when the override is set — Atlas clusters are already configured and will reject the command.
 
 **Important Notes:**
-- MongoDB CE uses application-level vector search (Python cosine similarity)
+- MongoDB Atlas uses application-level vector search (Python cosine similarity)
 - DocumentDB uses native HNSW vector indexes for production performance
 - Both backends use the same repository code (`DocumentDBServerRepository`, etc.)
 - Scopes are stored in MongoDB (collection `mcp_scopes_{namespace}`) and managed via the API
@@ -420,8 +400,8 @@ You can switch between backends at any time by changing `STORAGE_BACKEND`:
 export STORAGE_BACKEND=file
 docker-compose restart registry
 
-# Switch to MongoDB CE backend
-export STORAGE_BACKEND=mongodb-ce
+# Switch to MongoDB Atlas backend
+export STORAGE_BACKEND=mongodb-atlas
 docker-compose restart registry
 
 # Switch to DocumentDB backend

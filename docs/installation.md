@@ -9,6 +9,7 @@ Complete installation instructions for the MCP Gateway & Registry on various pla
   - **Docker & Docker Compose**: Standard container runtime
   - **Podman & Podman Compose**: Rootless alternative (recommended for macOS)
 - **Amazon Cognito or Keycloak**: Identity provider for authentication (see [Cognito Setup Guide](cognito.md), [Keycloak: MCP Client Guide](keycloak-mcp-clients.md), or [Keycloak: Agent M2M & Operations Guide](keycloak-agent-m2m.md))
+- **MongoDB Atlas**: A separate database for the environment being deployed; local and Azure deployments must use different Atlas credentials and network access rules.
 - **SSL Certificate**: Optional for HTTPS deployment in production
 
 ## Quick Start
@@ -31,7 +32,8 @@ hf download sentence-transformers/all-MiniLM-L6-v2 --local-dir ${HOME}/mcp-gatew
 
 # 4. Configure environment - edit .env with your passwords
 nano .env
-# Set: KEYCLOAK_ADMIN_PASSWORD, INITIAL_ADMIN_PASSWORD (must match), KEYCLOAK_DB_PASSWORD
+# Set: MONGODB_CONNECTION_STRING, APISIX_ADMIN_KEY, KEYCLOAK_ADMIN_PASSWORD,
+# INITIAL_ADMIN_PASSWORD (must match), KEYCLOAK_DB_PASSWORD
 # Set: SESSION_COOKIE_SECURE=false (for HTTP localhost)
 
 # Generate SECRET_KEY
@@ -42,14 +44,10 @@ sed -i "s/^#*\s*SECRET_KEY=.*/SECRET_KEY=$SECRET_KEY/" .env
 export DOCKERHUB_ORG=mcpgateway
 source .env
 export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-./build_and_run.sh --prebuilt
+./scripts/local-stack.sh start
 # Press Ctrl+C when logs are streaming - containers continue running
 
-# 6. Initialize MongoDB
-docker compose up mongodb-init
-docker compose restart auth-server
-
-# 7. Initialize Keycloak (wait for Keycloak to start first)
+# 6. Initialize Keycloak (wait for Keycloak to start first)
 # Note: both realms ship with sslRequired=external, which requires TLS for
 # external requests but allows plaintext HTTP from loopback. These commands talk
 # to Keycloak over http://localhost, so no SSL change is needed. Do NOT set
@@ -68,15 +66,15 @@ cat .oauth-tokens/keycloak-client-secrets.txt
 nano .env  # Update KEYCLOAK_CLIENT_SECRET and KEYCLOAK_M2M_CLIENT_SECRET
 
 # Recreate containers with new credentials
-./build_and_run.sh --prebuilt
+./scripts/local-stack.sh start
 
-# 8. Setup users and service accounts
+# 7. Setup users and service accounts
 chmod +x ./cli/bootstrap_user_and_m2m_setup.sh
 ./cli/bootstrap_user_and_m2m_setup.sh
 
 # 9. Access registry
-open http://localhost  # macOS
-# xdg-open http://localhost  # Linux
+open http://127.0.0.1:19080  # macOS
+# xdg-open http://127.0.0.1:19080  # Linux
 # Login: admin / <KEYCLOAK_ADMIN_PASSWORD>
 ```
 
@@ -126,11 +124,7 @@ export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 # Apple Silicon: Use ./build_and_run.sh --podman (without --prebuilt)
 # Press Ctrl+C when logs are streaming - containers continue running
 
-# 8. Initialize MongoDB
-podman compose up mongodb-init
-podman compose restart auth-server
-
-# 9. Initialize Keycloak (wait for Keycloak to start first)
+# 8. Initialize Keycloak (wait for Keycloak to start first)
 # Note: Podman uses port 18080 for Keycloak.
 # Both realms ship with sslRequired=external (TLS required for external requests,
 # plaintext allowed from loopback). These commands talk to Keycloak over
@@ -313,8 +307,7 @@ nano .env  # Configure required values
 ./build_and_run.sh --prebuilt
 ```
 
-After initial deployment, you must complete the MongoDB and Keycloak initialization steps. See the [Podman Installation Quick Start](#podman-installation-rootless-alternative) above for the complete sequence including:
-- MongoDB initialization (`podman compose up mongodb-init`)
+After initial deployment, complete the Keycloak initialization steps. See the [Podman Installation Quick Start](#podman-installation-rootless-alternative) above for the complete sequence including:
 - Keycloak realm setup (using port 18080)
 - Client credential retrieval and .env update
 - Container recreation to apply credentials

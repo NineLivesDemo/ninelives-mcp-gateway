@@ -2,7 +2,9 @@
 
 This guide describes the **current** observability architecture (1.25.0+),
 the metrics each service emits, and a cookbook of PromQL queries for the
-investigations operators most often need to run.
+investigations operators most often need to run. Local Prometheus and Grafana
+are optional debugging services; production deployments should export through
+a collector or agent to the operator's hosted observability backend.
 
 ## Table of Contents
 
@@ -35,11 +37,12 @@ investigations operators most often need to run.
    │ (always-on Prometheus exporter)           │ to OTEL_EXPORTER_OTLP_ENDPOINT
    │                                           │
    ▼                                           ▼
-Prometheus (Compose) /                    Per-task ADOT sidecar (ECS)
-in-cluster Prometheus (EKS)                  → Amazon Managed Prometheus
+Prometheus (optional Compose debug profile) /
+in-cluster Prometheus (EKS) /
+collector or vendor backend (production)
    │
    ▼
-Grafana (or any Prometheus-compatible UI)
+Grafana, hosted Grafana, or another compatible UI
 ```
 
 Three differences from the legacy architecture:
@@ -139,16 +142,31 @@ are the same — only the viewer changes.
 
 ### Docker Compose
 
-Everything is wired in the `docker-compose.yml` file: Prometheus container,
-Grafana container, and (optional) the OTel collector for OTLP push
-verification. Direct access from your laptop:
+The default `docker compose up -d` starts the application stack without local
+Prometheus or Grafana. Enable the `debug-observability` profile when you need
+local dashboards and short-lived investigation data:
+
+```bash
+docker compose --profile debug-observability up -d
+```
+
+Direct access from your laptop:
 
 | URL | What you see |
 |---|---|
-| `http://localhost:9090/targets` | Prometheus targets page. All four `mcp-*` jobs (registry, auth-server, mcpgw, metrics-service for the legacy path) should show **UP**. |
+| `http://localhost:9090/targets` | Prometheus targets page when the debug profile is enabled. All configured `mcp-*` jobs should show **UP**. |
 | `http://localhost:9090/graph` | Prometheus query workbench. Type any of the queries from [Query cookbook](#query-cookbook) here. |
 | `http://localhost:3000/` | Grafana UI. Login admin / `${GRAFANA_ADMIN_PASSWORD}` from `.env`. Add a Prometheus data source pointing at `http://prometheus:9090`. |
 | `http://localhost:8889/metrics` | The OTel collector's re-exposed Prometheus surface (only meaningful when `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317` is set in `.env`). |
+
+The local profile is for debugging and offline development, not production
+retention. For production, run Grafana Alloy or OpenTelemetry Collector as a
+shared container in the deployment stack. Application containers send redacted
+signals to it over the private container network, and it forwards them to
+hosted Grafana over authenticated HTTPS/OTLP. Mount only the log directories
+that it must read, read-only; avoid exposing the Docker socket unless a
+receiver has no safer alternative. Do not send verbose debug payloads or
+secrets to the hosted backend.
 
 For a graphical trace browser, follow the instructions in
 [Adding a graphical trace UI](#adding-a-graphical-trace-ui).

@@ -94,18 +94,30 @@ git clone https://github.com/agentic-community/mcp-gateway-registry.git
 cd mcp-gateway-registry
 cp .env.example .env
 
-# Edit .env and set the required secrets (e.g. KEYCLOAK_ADMIN_PASSWORD, SECRET_KEY).
+# Edit .env and set MONGODB_CONNECTION_STRING plus required secrets
+# (e.g. APISIX_ADMIN_KEY, KEYCLOAK_ADMIN_PASSWORD, SECRET_KEY).
 # See docs/configuration.md for the full list.
 nano .env
 
-# Deploy with pre-built images (pulled from Amazon ECR Public by default)
-./build_and_run.sh --prebuilt
+# Deploy with pre-built images and the required APISIX edge
+./scripts/local-stack.sh start
 
-# Open the Registry UI (served by nginx on port 80)
-open http://localhost        # macOS  (Linux: xdg-open http://localhost)
+# Open the Registry UI through APISIX
+open http://127.0.0.1:19080        # macOS
+# xdg-open http://127.0.0.1:19080  # Linux
 ```
 
-The [Complete Installation Guide](docs/installation.md) has the full walkthrough for **Amazon EC2** (prerequisites, MongoDB and Keycloak initialization, first user and service account, registering a server, and testing the gateway).
+The wrapper also starts the etcd-backed APISIX edge and its route bootstrap. The Dashboard and Admin API are available only on loopback:
+
+```bash
+# Add --debug to also start local Prometheus and Grafana.
+./scripts/local-stack.sh start --debug
+open http://127.0.0.1:19180/ui/        # macOS
+```
+
+APISIX listens on loopback port `19080` and forwards to the Registry over the Compose network. Route state is persisted in the local `apisix-etcd-data` volume; the initial Registry route is seeded when absent and later Dashboard edits are preserved. Never publish the Admin API beyond loopback or expose it through an unauthenticated public route.
+
+The [Complete Installation Guide](docs/installation.md) has the full walkthrough for **Amazon EC2** (prerequisites, managed MongoDB Atlas and Keycloak configuration, first user and service account, registering a server, and testing the gateway).
 
 **Deploying somewhere else?**
 

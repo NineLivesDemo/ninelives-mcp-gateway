@@ -769,7 +769,9 @@ working in those areas.
   privilege decisions; verify externally-supplied JWTs (sig/iss/aud/exp) before
   trusting claims; attach shared/global credentials only on explicit admin opt-in.
 - **Never log** secrets, tokens, PII, or full credential/claim payloads — redact
-  (including setup/debug scripts in verbose mode).
+  (including setup/debug scripts in verbose mode). Compose/runtime wrappers can
+  render interpolated secrets into lifecycle output, so suppress orchestrator
+  stdout and retain only non-secret error diagnostics.
 - **OAuth/OIDC:** bind the code flow to the login — per-login `nonce` (checked
   after signature verification) + PKCE (`S256`), fail closed if the verifier is
   missing. Authorize the EXACT bytes you forward, never a separately-captured

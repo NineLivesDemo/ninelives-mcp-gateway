@@ -414,10 +414,24 @@ policy, and creates the role bound to the registry ServiceAccount. An unseal
 sidecar re-unseals on every restart. The registry then authenticates to OpenBao
 with its projected ServiceAccount token (no static token to rotate).
 
-For local development against a throwaway OpenBao:
+For local Compose development, OpenBao uses file-backed storage under
+`./.openbao` (override with `OPENBAO_DATA_DIR`). The first startup initializes
+and unseals it automatically, then creates a restricted token for the registry
+under the separate read-only `client` mount. The unseal key and root token stay
+under the `bootstrap` mount and are not exposed to the registry container. Do
+not commit or share this directory. Restarting or recreating the container
+preserves vaulted credentials:
 
 ```bash
-scripts/run-openbao-dev.sh start    # in-memory dev server on :8200, KV v2 at secret/
+docker compose up -d openbao
+docker compose logs -f openbao
+```
+
+The standalone `scripts/run-openbao-dev.sh` helper remains intentionally
+ephemeral and is only for the OpenBao integration tests:
+
+```bash
+scripts/run-openbao-dev.sh start
 export OPENBAO_TEST_ADDR=http://127.0.0.1:8200
 export OPENBAO_TEST_TOKEN=dev-root-token
 uv run pytest tests/integration/test_openbao_secret_store.py -v
@@ -452,7 +466,9 @@ AUTH_SERVER_NGINX_MARKER_SECRET=<strong-random-value>
 # OpenBao:
 OPENBAO_ADDR=http://openbao:8200
 OPENBAO_AUTH_METHOD=token
-# (provide OPENBAO_TOKEN/VAULT_TOKEN via the environment for token auth)
+# Local Compose supplies OPENBAO_TOKEN_FILE from its restricted client-token
+# mount. For an external vault, set OPENBAO_TOKEN_FILE= and provide
+# OPENBAO_TOKEN/VAULT_TOKEN through the environment.
 # or Secrets Manager:
 # AWS_SECRETS_REGION=us-east-1
 # SECRETS_MANAGER_PATH_PREFIX=mcp/egress

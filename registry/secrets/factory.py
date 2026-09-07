@@ -18,6 +18,29 @@ logger = logging.getLogger(__name__)
 _secret_store: SecretStoreBase | None = None
 
 
+def _read_openbao_token() -> str:
+    token_file = os.getenv("OPENBAO_TOKEN_FILE")
+    if token_file:
+        try:
+            with open(token_file, encoding="utf-8") as token_handle:
+                token = token_handle.read().strip()
+        except OSError as exc:
+            raise ValueError(
+                f"OPENBAO_TOKEN_FILE is configured but cannot be read: {token_file}"
+            ) from exc
+        if not token:
+            raise ValueError(f"OPENBAO_TOKEN_FILE is empty: {token_file}")
+        return token
+
+    token = os.environ.get("OPENBAO_TOKEN") or os.environ.get("VAULT_TOKEN")
+    if not token:
+        raise ValueError(
+            "OPENBAO_AUTH_METHOD=token requires OPENBAO_TOKEN, VAULT_TOKEN, "
+            "or OPENBAO_TOKEN_FILE."
+        )
+    return token
+
+
 def _build_secrets_manager() -> SecretStoreBase:
     import boto3
 
@@ -81,14 +104,7 @@ def _build_openbao() -> SecretStoreBase:
     # closure is a no-op: nothing to refresh.
     def _login() -> None:
         if method == "token":
-            import os
-
-            token = os.environ.get("OPENBAO_TOKEN") or os.environ.get("VAULT_TOKEN")
-            if not token:
-                raise ValueError(
-                    "OPENBAO_AUTH_METHOD=token requires OPENBAO_TOKEN (or VAULT_TOKEN)."
-                )
-            client.token = token
+            client.token = _read_openbao_token()
         elif method == "kubernetes":
             role = settings.openbao_role
             if not role:

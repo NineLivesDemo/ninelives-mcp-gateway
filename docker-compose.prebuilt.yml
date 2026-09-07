@@ -12,23 +12,15 @@ version: '3.8'
 
 services:
   # OpenBao - per-user egress credential vault (third-party OBO support).
-  # Runs in DEV mode: in-memory storage, auto-unsealed, with a fixed root
-  # token. This is the local-dev equivalent of the Helm standalone OpenBao
-  # (charts/mcp-gateway-registry-stack); the Helm path is sealed + file-backed
-  # and bootstraps via an init Job, none of which is needed for local compose.
-  # Data is NOT persisted across restarts (dev mode is in-memory by design).
-  # The registry reaches it via token auth using OPENBAO_TOKEN.
+  # Local Compose uses file-backed storage and bootstraps a restricted client
+  # token on first start. The data and bootstrap files are kept under
+  # OPENBAO_DATA_DIR (default: ./.openbao).
   openbao:
     image: openbao/openbao:2.5.5
     container_name: mcp-openbao
-    command: ["server", "-dev"]
+    command: ["/usr/local/bin/openbao-local-entrypoint.sh"]
     environment:
-      # Dev mode auto-mounts KV v2 at secret/ and auto-unseals with this token.
-      # OPENBAO_TOKEN is required (no default): reaching :8200 with a known token
-      # grants root access to every stored egress credential, so we fail fast
-      # rather than ship a guessable "dev-root-token" default.
-      - BAO_DEV_ROOT_TOKEN_ID=${OPENBAO_TOKEN:?Set OPENBAO_TOKEN in .env (a strong random value; do not reuse the old dev-root-token default)}
-      - BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - OPENBAO_KV_MOUNT=${OPENBAO_KV_MOUNT:-secret}
     # Published on loopback only: the dev vault is auto-unsealed and must never
     # be reachable from other hosts on the network.
     ports:
@@ -36,14 +28,18 @@ services:
       # the host. Override with HOST_BIND_IP=0.0.0.0 only if you understand the risk.
       - "${HOST_BIND_IP:-127.0.0.1}:8200:8200"
     healthcheck:
-      # Health endpoint reports 200 once the API is listening (dev mode is
-      # always unsealed + initialized, so the default codes are fine).
       test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
-      interval: 30s
+      interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 5s
+      retries: 10
+      start_period: 15s
     restart: unless-stopped
+    volumes:
+      - ${OPENBAO_DATA_DIR:-./.openbao}/data:/openbao/data
+      - ${OPENBAO_DATA_DIR:-./.openbao}/bootstrap:/openbao/bootstrap
+      - ${OPENBAO_DATA_DIR:-./.openbao}/client:/openbao/client
+      - ./docker/openbao-local.hcl:/openbao/config/local.hcl:ro
+      - ./scripts/openbao-local-entrypoint.sh:/usr/local/bin/openbao-local-entrypoint.sh:ro
 
   # Registry service (includes nginx, SSL, FAISS, models) - using pre-built image
   # Pre-built images are published to Amazon ECR Public (public.ecr.aws/p3v1o3c6).
@@ -51,6 +47,9 @@ services:
   registry:
     image: ${ECR_REGISTRY:-public.ecr.aws/p3v1o3c6}/registry:${REGISTRY_VERSION:-latest}
     environment:
+      # The published image predates the runtime CA-bundle repair in
+      # Dockerfile.registry; use its bundled certifi store until rebuilt.
+      - SSL_CERT_FILE=/app/.venv/lib/python3.14/site-packages/certifi/cacert.pem
       # Deployment Mode Configuration
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-with-gateway}
       - REGISTRY_MODE=${REGISTRY_MODE:-full}
@@ -77,6 +76,7 @@ services:
       - SSRF_ALLOWED_CIDRS=${SSRF_ALLOWED_CIDRS:-}
       # Registry Card Configuration
       - REGISTRY_URL=${REGISTRY_URL:-http://localhost}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
       # Request-source trust (audit client IP + OAuth external-URL host allowlist)
       - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-1}
       - TRUSTED_EXTERNAL_HOSTS=${TRUSTED_EXTERNAL_HOSTS:-}
@@ -109,16 +109,17 @@ services:
       - AWS_SECRETS_REGION=${AWS_SECRETS_REGION:-}
       - SECRETS_MANAGER_KMS_KEY_ID=${SECRETS_MANAGER_KMS_KEY_ID:-}
       - SECRETS_MANAGER_PATH_PREFIX=${SECRETS_MANAGER_PATH_PREFIX:-mcp/egress}
-      # Default to the in-stack OpenBao container (dev mode). Override for an
-      # external vault.
+      # Default to the in-stack persistent OpenBao container. Override for an
+      # external vault and set OPENBAO_TOKEN_FILE empty to use OPENBAO_TOKEN.
       - OPENBAO_ADDR=${OPENBAO_ADDR:-http://openbao:8200}
       - OPENBAO_NAMESPACE=${OPENBAO_NAMESPACE:-}
       - OPENBAO_KV_MOUNT=${OPENBAO_KV_MOUNT:-secret}
       - OPENBAO_AUTH_METHOD=${OPENBAO_AUTH_METHOD:-token}
       - OPENBAO_ROLE=${OPENBAO_ROLE:-}
-      # Static token for OPENBAO_AUTH_METHOD=token; matches the dev OpenBao root
-      # token. Required for token auth (kubernetes auth is EKS-only).
-      - OPENBAO_TOKEN=${OPENBAO_TOKEN:?Set OPENBAO_TOKEN in .env (a strong random value; do not reuse the old dev-root-token default)}
+      # Local Compose receives a restricted token from OpenBao's separate
+      # read-only client-token mount. External vaults can set OPENBAO_TOKEN_FILE=
+      # and provide OPENBAO_TOKEN through the environment instead.
+      - OPENBAO_TOKEN_FILE=${OPENBAO_TOKEN_FILE:-/openbao/client/client_token}
       - AUTH_SERVER_URL=${AUTH_SERVER_URL}
       - AUTH_SERVER_EXTERNAL_URL=${AUTH_SERVER_EXTERNAL_URL}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
@@ -149,6 +150,7 @@ services:
       - AUTH_PROVIDER=${AUTH_PROVIDER:-cognito}
       - KEYCLOAK_ENABLED=${KEYCLOAK_ENABLED:-false}
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
+      - KEYCLOAK_EXTERNAL_URL=${KEYCLOAK_EXTERNAL_URL:-http://localhost:8080}
       - KEYCLOAK_REALM=${KEYCLOAK_REALM:-mcp-gateway}
       - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-mcp-gateway-web}
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
@@ -210,13 +212,13 @@ services:
       - GITHUB_EXTRA_HOSTS=${GITHUB_EXTRA_HOSTS:-}
       - GITHUB_API_BASE_URL=${GITHUB_API_BASE_URL:-https://api.github.com}
       # Storage Backend Configuration
-      - STORAGE_BACKEND=${STORAGE_BACKEND:-mongodb-ce}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-mongodb-atlas}
       # DocumentDB/MongoDB Configuration (when STORAGE_BACKEND=documentdb)
-      # MONGODB_CONNECTION_STRING: Optional full URI override (e.g. for MongoDB
-      # Atlas, mongodb+srv://...). When set, takes precedence over the discrete
+      # MONGODB_CONNECTION_STRING: Required full URI (e.g. MongoDB Atlas
+      # mongodb+srv://...). It takes precedence over the discrete
       # DOCUMENTDB_* values below.
-      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING:-}
-      - DOCUMENTDB_HOST=${DOCUMENTDB_HOST:-mongodb}
+      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING:?Set MONGODB_CONNECTION_STRING in .env}
+      - DOCUMENTDB_HOST=${DOCUMENTDB_HOST:-}
       - DOCUMENTDB_PORT=${DOCUMENTDB_PORT:-27017}
       - DOCUMENTDB_USERNAME=${DOCUMENTDB_USERNAME}
       - DOCUMENTDB_PASSWORD=${DOCUMENTDB_PASSWORD}
@@ -340,9 +342,8 @@ services:
       # Registry-UI internal token verification (the /api/ hop; mints in auth-server)
       - INTERNAL_TOKEN_TTL_SECONDS=${INTERNAL_TOKEN_TTL_SECONDS:-30}
       - INTERNAL_TOKEN_LEEWAY_SECONDS=${INTERNAL_TOKEN_LEEWAY_SECONDS:-5}
-    ports:
-      - "80:8080"   # Map host 80 to container 8080 (non-root nginx)
-      - "443:8443"  # Map host 443 to container 8443 (non-root nginx)
+    # The Registry is reached through the required APISIX edge overlay.
+    # Do not publish the application front door directly on the host.
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -359,13 +360,16 @@ services:
       - ${HOME}/mcp-gateway/security_scans:/app/security_scans
       - ${HOME}/mcp-gateway/federation.json:/app/config/federation.json
       - ${HOME}/mcp-gateway/ssl:/etc/ssl:ro
+      - ${OPENBAO_DATA_DIR:-./.openbao}/client:/openbao/client:ro
+      # Keep the local prebuilt workflow aligned with the repository's
+      # proxy/auth routing templates.
+      - ./docker/nginx_rev_proxy_http_only.conf:/app/docker/nginx_rev_proxy_http_only.conf:ro
+      - ./docker/nginx_rev_proxy_http_and_https.conf:/app/docker/nginx_rev_proxy_http_and_https.conf:ro
       # Application log files (bind mount to host for Splunk ingestion, Issue #987)
       - /var/log/containers/ai-registry:/var/log/containers/ai-registry
     depends_on:
       auth-server:
         condition: service_started
-      mongodb-init:
-        condition: service_completed_successfully
       openbao:
         condition: service_healthy
     restart: unless-stopped
@@ -463,13 +467,13 @@ services:
       # IdP user-to-group fallback (issue #1127)
       - IDP_USER_GROUP_FALLBACK_ENABLED_PROVIDERS=${IDP_USER_GROUP_FALLBACK_ENABLED_PROVIDERS:-pingfederate}
       # Storage Backend Configuration
-      - STORAGE_BACKEND=${STORAGE_BACKEND:-mongodb-ce}
-      # DocumentDB/MongoDB Configuration (when STORAGE_BACKEND=documentdb or mongodb-ce)
-      # MONGODB_CONNECTION_STRING: Optional full URI override (e.g. for MongoDB
-      # Atlas, mongodb+srv://...). When set, takes precedence over the discrete
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-mongodb-atlas}
+      # DocumentDB/MongoDB Configuration
+      # MONGODB_CONNECTION_STRING: Required full URI (e.g. MongoDB Atlas
+      # mongodb+srv://...). It takes precedence over the discrete
       # DOCUMENTDB_* values below.
-      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING:-}
-      - DOCUMENTDB_HOST=${DOCUMENTDB_HOST:-mongodb}
+      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING:?Set MONGODB_CONNECTION_STRING in .env}
+      - DOCUMENTDB_HOST=${DOCUMENTDB_HOST:-}
       - DOCUMENTDB_PORT=${DOCUMENTDB_PORT:-27017}
       - DOCUMENTDB_USERNAME=${DOCUMENTDB_USERNAME}
       - DOCUMENTDB_PASSWORD=${DOCUMENTDB_PASSWORD}
@@ -529,9 +533,6 @@ services:
       - ${HOME}/mcp-gateway/logs:/app/logs
       # Application log files (bind mount to host for Splunk ingestion, Issue #987)
       - /var/log/containers/ai-registry:/var/log/containers/ai-registry
-    depends_on:
-      mongodb-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   # NOTE: The currenttime-server and realserverfaketools-server demo MCP servers
@@ -583,6 +584,10 @@ services:
   # Prometheus for metrics collection - using canonical upstream image
   prometheus:
     image: prom/prometheus:${PROMETHEUS_VERSION:-v3.11.3}
+    # Local-only debugging stack. Production deployments should export through
+    # an external collector to the hosted observability backend instead.
+    profiles:
+      - debug-observability
     # Operator dashboard: published on loopback only (no auth on Prometheus).
     ports:
       # Loopback-only: Prometheus UI is a local-dev convenience, not a public surface.
@@ -606,6 +611,10 @@ services:
   # Grafana for metrics visualization - using canonical upstream image
   grafana:
     image: grafana/grafana:${GRAFANA_VERSION:-12.3.1}
+    # Local-only debugging stack. Enable with COMPOSE_PROFILES or
+    # `docker compose --profile debug-observability up -d`.
+    profiles:
+      - debug-observability
     # Operator dashboard: published on loopback only. Reach it via an SSH
     # tunnel for remote access rather than exposing it to the network.
     ports:
@@ -674,6 +683,7 @@ services:
 
       # Features
       KC_FEATURES: token-exchange,admin-api
+      KC_HEALTH_ENABLED: 'true'
 
       # Logging
       KC_LOG_LEVEL: INFO
@@ -699,7 +709,7 @@ services:
       - ./keycloak/import:/opt/keycloak/data/import
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -731,109 +741,9 @@ services:
       retries: 5
       start_period: 180s
 
-  # MongoDB keyfile initialization (generates keyfile for replica set authentication)
-  # This runs once before MongoDB starts to create the keyfile with correct permissions
-  mongodb-keyfile-init:
-    # Pinned (not :latest) so rebuilds are reproducible.
-    image: alpine:3.21
-    container_name: mcp-mongodb-keyfile-init
-    volumes:
-      - mongodb-keyfile:/keyfile
-    command: >
-      sh -c "
-      if [ ! -f /keyfile/replica.key ]; then
-        echo 'Generating MongoDB keyfile...';
-        apk add --no-cache openssl;
-        openssl rand -base64 756 > /keyfile/replica.key;
-        chmod 400 /keyfile/replica.key;
-        chown 999:999 /keyfile/replica.key;
-        echo 'Keyfile generated successfully';
-      else
-        echo 'Keyfile already exists, skipping generation';
-      fi
-      "
-    restart: "no"
-
-  # MongoDB Community Edition 8.2 (alternative to DocumentDB for local development)
-  # Vector search is implemented in application code (see search_repository.py)
-  # Running with authentication enabled for security
-  mongodb:
-    image: mongo:${MONGODB_VERSION:-8.2}
-    container_name: mcp-mongodb
-    command: mongod --replSet rs0 --bind_ip 127.0.0.1,mongodb --auth --keyFile /keyfile/replica.key
-    environment:
-      # No password default: MongoDB runs with --auth here, so a shipped
-      # "admin/admin" would be usable root credentials. DOCUMENTDB_PASSWORD is
-      # required; set a strong value in .env.
-      - MONGO_INITDB_ROOT_USERNAME=${DOCUMENTDB_USERNAME:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${DOCUMENTDB_PASSWORD:?Set DOCUMENTDB_PASSWORD in .env (do not use the old admin default)}
-    # Authenticated, but the published port is still bound to loopback so the
-    # database is not reachable from other hosts on the network.
-    ports:
-      # Loopback-only: host tools (mongosh, tests) reach it via localhost, but it
-      # is never exposed on other interfaces. Set HOST_BIND_IP=0.0.0.0 to override.
-      - "${HOST_BIND_IP:-127.0.0.1}:27017:27017"
-    volumes:
-      - mongodb-data:/data/db
-      - mongodb-config:/data/configdb
-      - mongodb-keyfile:/keyfile:ro
-    cap_drop:
-      - ALL
-    cap_add:
-      - SETUID
-      - SETGID
-      - CHOWN
-      - DAC_OVERRIDE
-    depends_on:
-      mongodb-keyfile-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "mongosh", "-u", "${DOCUMENTDB_USERNAME:-admin}", "-p", "${DOCUMENTDB_PASSWORD:?Set DOCUMENTDB_PASSWORD in .env}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
-      interval: 60s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-
-  # MongoDB initialization (creates replica set, indexes, and loads admin scope)
-  mongodb-init:
-    image: python:3.14-slim
-    container_name: mcp-mongodb-init
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    environment:
-      - DOCUMENTDB_HOST=mongodb
-      - DOCUMENTDB_PORT=27017
-      - DOCUMENTDB_DATABASE=${DOCUMENTDB_DATABASE:-mcp_registry}
-      - DOCUMENTDB_USERNAME=${DOCUMENTDB_USERNAME:-admin}
-      - DOCUMENTDB_PASSWORD=${DOCUMENTDB_PASSWORD:?Set DOCUMENTDB_PASSWORD in .env}
-      - DOCUMENTDB_NAMESPACE=${DOCUMENTDB_NAMESPACE:-default}
-      - ENTRA_GROUP_ADMIN_ID=${ENTRA_GROUP_ADMIN_ID:-}
-    volumes:
-      - ./scripts/init-mongodb-ce.py:/app/scripts/init-mongodb-ce.py:ro
-      - ./scripts/registry-admins.json:/app/scripts/registry-admins.json:ro
-      - ./scripts/mcp-registry-admin.json:/app/scripts/mcp-registry-admin.json:ro
-      - ./scripts/mcp-servers-unrestricted-read.json:/app/scripts/mcp-servers-unrestricted-read.json:ro
-      - ./scripts/mcp-servers-unrestricted-execute.json:/app/scripts/mcp-servers-unrestricted-execute.json:ro
-      - ./scripts/federation-service.json:/app/scripts/federation-service.json:ro
-    command: >
-      sh -c "
-      pip install --quiet motor pymongo &&
-      python /app/scripts/init-mongodb-ce.py
-      "
-    restart: "no"
-
 volumes:
   ssl_data:
   keycloak_db_data:
   prometheus-data:
   grafana-data:
-  mongodb-data:
-  mongodb-config:
-  mongodb-keyfile:
   pingfederate-data:

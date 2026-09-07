@@ -104,6 +104,12 @@ sanitizer that isn't called) is equivalent to no check.
   meant to ship at that level. After fixing the reported site, grep the whole
   package for the same variable/pattern — these leaks travel in packs across
   health-check, connection, and registration code paths.
+- **Compose/runtime wrappers can render interpolated secrets into logs.** Some
+  Compose implementations print generated `podman run`/`docker run` argument
+  vectors containing environment values even when application logging is
+  redacted. Suppress orchestrator stdout for config and lifecycle commands,
+  retain only non-secret error diagnostics, and never treat rendered command
+  lines as harmless operational output.
 - **Never reflect an exception/stack trace into a response the caller sees**
   (CWE-209, CodeQL `py/stack-trace-exposure`). `HTTPException(detail=str(e))`,
   `return {"error": str(e)}` from a route, and `HTMLResponse(f"...{exc}...")` all
