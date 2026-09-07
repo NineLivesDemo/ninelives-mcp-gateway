@@ -60,6 +60,7 @@ dependencies = [
     "opentelemetry-sdk>=1.41.1",
     "opentelemetry-exporter-prometheus>=0.64b0",
     "hvac>=2.0.0",  # OpenBao/Vault client for the egress credential vault  # pragma: allowlist secret
+    "ruff>=0.16.6",
 ]
 
 [project.optional-dependencies]
