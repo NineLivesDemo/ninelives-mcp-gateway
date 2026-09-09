@@ -10,11 +10,17 @@ param vnetAddressPrefix string
 @description('Whether to create the private Registry application VM subnet and NSG.')
 param deployApplicationVm bool = false
 
+@description('Whether to preserve existing application and Keycloak subnets even when VM creation is disabled.')
+param preserveExistingApplicationSubnets bool = true
+
 @description('Whether to create the private Keycloak VM subnet and NSG.')
 param deployKeycloakVm bool = false
 
 @description('Whether to deploy Azure Bastion for private VM access.')
 param deployBastion bool = false
+
+@description('Whether to preserve an existing Azure Bastion subnet when Bastion deployment is disabled.')
+param preserveExistingBastionSubnet bool = true
 
 @description('Tags applied to network resources.')
 param tags object = {}
@@ -182,7 +188,7 @@ resource openBaoNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   tags: tags
 }
 
-resource appsNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (deployApplicationVm) {
+resource appsNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (deployApplicationVm || preserveExistingApplicationSubnets) {
   name: 'nsg-${vnetName}-apps'
   location: location
   properties: {
@@ -244,7 +250,7 @@ resource appsNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (depl
   tags: tags
 }
 
-resource keycloakNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (deployKeycloakVm) {
+resource keycloakNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (deployKeycloakVm || preserveExistingApplicationSubnets) {
   name: 'nsg-${vnetName}-keycloak'
   location: location
   properties: {
@@ -380,9 +386,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         }
       }
       ],
-      deployApplicationVm ? [applicationSubnet] : [],
-      deployKeycloakVm ? [keycloakSubnet] : [],
-      deployBastion
+      (deployApplicationVm || preserveExistingApplicationSubnets) ? [applicationSubnet] : [],
+      (deployKeycloakVm || preserveExistingApplicationSubnets) ? [keycloakSubnet] : [],
+      (deployBastion || preserveExistingBastionSubnet)
       ? [
           {
             name: 'AzureBastionSubnet'

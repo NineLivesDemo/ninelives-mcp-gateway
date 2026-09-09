@@ -61,6 +61,14 @@ dependencies = [
     "opentelemetry-exporter-prometheus>=0.64b0",
     "hvac>=2.0.0",  # OpenBao/Vault client for the egress credential vault  # pragma: allowlist secret
     "ruff>=0.16.6",
+    "azure-identity>=1.25.3",
+    "azure-keyvault-secrets>=4.11.2",
+    "azure-mgmt-automation>=2.0.0",
+    "azure-mgmt-authorization>=4.0.0",
+    "azure-mgmt-compute>=38.3.0",
+    "azure-mgmt-network>=32.0.0",
+    "azure-mgmt-resource>=26.0.0",
+    "azure-storage-blob>=12.25.1",
 ]
 
 [project.optional-dependencies]

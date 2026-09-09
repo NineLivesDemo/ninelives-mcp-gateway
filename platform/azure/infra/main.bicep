@@ -28,6 +28,9 @@ param openBaoVmSize string = 'Standard_D2ls_v7'
 @description('Whether to provision the existing edge, etcd, and OpenBao VMs.')
 param deployFoundationVms bool = false
 
+@description('Whether to preserve existing application and Keycloak subnets when VM creation is disabled.')
+param preserveExistingApplicationSubnets bool = true
+
 @description('Whether to deploy the private Registry application VM.')
 param deployAppVm bool = false
 
@@ -39,6 +42,30 @@ param appVmPrivateIpAddress string = '10.60.4.4'
 
 @description('Whether to deploy the private Keycloak VM.')
 param deployKeycloakVm bool = false
+
+@description('Whether to publish the read-only platform Automation runbook.')
+param deployPlatformRunbook bool = false
+
+@description('Immutable URI for the platform runbook content.')
+param platformRunbookContentUri string = ''
+
+@description('Immutable version or digest for the platform runbook content.')
+param platformRunbookContentVersion string = ''
+
+@description('Globally unique storage account name for operation locks and audit records.')
+param operationsStorageAccountName string = 'st${uniqueString(subscription().id, environmentName)}'
+
+@description('Whether to deploy the private endpoint for the operations storage account.')
+param deployOperationsPrivateEndpoint bool = true
+
+@description('Whether to install the extension-based Linux Hybrid Runbook Worker on existing private VMs.')
+param deployHybridWorkers bool = false
+
+@description('Hybrid Runbook Worker group name.')
+param hybridWorkerGroupName string = 'platform-workers'
+
+@description('Whether to install the UV-managed Python 3.10 compatibility runtime on the application VM.')
+param enablePython310Compat bool = false
 
 @description('Whether to deploy Azure Bastion for private VM access.')
 param deployBastion bool = false
@@ -223,6 +250,7 @@ module network './modules/network.bicep' = {
     vnetName: 'vnet-${environmentName}'
     vnetAddressPrefix: vnetAddressPrefix
     deployApplicationVm: deployAppVm
+    preserveExistingApplicationSubnets: preserveExistingApplicationSubnets
     deployKeycloakVm: deployKeycloakVm
     deployBastion: deployBastion
     tags: tags
@@ -236,10 +264,83 @@ module ops './modules/ops.bicep' = {
     location: location
     keyVaultName: platformKeyVaultName
     automationAccountName: 'aa-${environmentName}'
+    hybridWorkerGroupName: hybridWorkerGroupName
+    operationsStorageAccountName: operationsStorageAccountName
+    deployHybridWorkers: deployHybridWorkers
+    hybridWorkerVmResourceIds: [
+      resourceId('Microsoft.Compute/virtualMachines', registryResourceGroupName, 'vm-platform-apps')
+      resourceId('Microsoft.Compute/virtualMachines', edgeResourceGroupName, 'vm-platform-edge')
+      resourceId('Microsoft.Compute/virtualMachines', etcdResourceGroupName, 'vm-platform-etcd')
+      resourceId('Microsoft.Compute/virtualMachines', openBaoResourceGroupName, 'vm-platform-openbao')
+      resourceId('Microsoft.Compute/virtualMachines', keycloakResourceGroupName, 'vm-platform-keycloak')
+    ]
+
+    deployPlatformRunbook: deployPlatformRunbook
+    platformRunbookContentUri: platformRunbookContentUri
+    platformRunbookContentVersion: platformRunbookContentVersion
     tags: tags
   }
 }
 
+module operationsStoragePrivateEndpoint './modules/storage-private-endpoint.bicep' = if (deployOperationsPrivateEndpoint) {
+  name: '${environmentName}-operations-storage-private-endpoint'
+  scope: networkResourceGroup
+  params: {
+    location: location
+    vnetName: 'vnet-${environmentName}'
+    storageAccountId: ops.outputs.operationsStorageAccountId
+    tags: tags
+  }
+}
+module edgeHybridWorker './modules/hybrid-worker-extension.bicep' = if (deployHybridWorkers) {
+  name: '${environmentName}-edge-hybrid-worker'
+  scope: edgeResourceGroup
+  params: {
+    location: location
+    vmName: 'vm-platform-edge'
+    automationAccountUrl: ops.outputs.automationHybridServiceUrl
+  }
+}
+
+module etcdHybridWorker './modules/hybrid-worker-extension.bicep' = if (deployHybridWorkers) {
+  name: '${environmentName}-etcd-hybrid-worker'
+  scope: etcdResourceGroup
+  params: {
+    location: location
+    vmName: 'vm-platform-etcd'
+    automationAccountUrl: ops.outputs.automationHybridServiceUrl
+  }
+}
+
+module openBaoHybridWorker './modules/hybrid-worker-extension.bicep' = if (deployHybridWorkers) {
+  name: '${environmentName}-openbao-hybrid-worker'
+  scope: openBaoResourceGroup
+  params: {
+    location: location
+    vmName: 'vm-platform-openbao'
+    automationAccountUrl: ops.outputs.automationHybridServiceUrl
+  }
+}
+
+module appsHybridWorker './modules/hybrid-worker-extension.bicep' = if (deployHybridWorkers) {
+  name: '${environmentName}-apps-hybrid-worker'
+  scope: registryResourceGroup
+  params: {
+    location: location
+    vmName: 'vm-platform-apps'
+    automationAccountUrl: ops.outputs.automationHybridServiceUrl
+  }
+}
+
+module keycloakHybridWorker './modules/hybrid-worker-extension.bicep' = if (deployHybridWorkers) {
+  name: '${environmentName}-keycloak-hybrid-worker'
+  scope: keycloakResourceGroup
+  params: {
+    location: location
+    vmName: 'vm-platform-keycloak'
+    automationAccountUrl: ops.outputs.automationHybridServiceUrl
+  }
+}
 module edge './modules/edge-vm.bicep' = if (deployFoundationVms) {
   name: '${environmentName}-edge-vm'
   scope: edgeResourceGroup
@@ -333,6 +434,7 @@ module appVm './modules/application-vm.bicep' = if (deployAppVm) {
     keycloakExternalUrl: keycloakExternalUrl
     openBaoRegistryTokenSecretName: openBaoRegistryTokenSecretName
     deployRuntimeAccess: deployRuntimeAccess
+    enablePython310Compat: enablePython310Compat
     tags: tags
   }
 }

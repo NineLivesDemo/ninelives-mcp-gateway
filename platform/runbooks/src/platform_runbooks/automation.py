@@ -1,0 +1,92 @@
+"""Azure Automation job contracts with deny-by-default mutation intent."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+from .manifest import get_role_manifest
+
+Operation = Literal[
+    "discover", "plan", "verify", "registry-schema-verify", "apply", "keycloak-reconcile"
+]
+_ALLOWED_OPERATIONS = frozenset(
+    {"discover", "plan", "verify", "registry-schema-verify", "apply", "keycloak-reconcile"}
+)
+
+
+@dataclass(frozen=True)
+class RunbookRequest:
+    """Validated, secret-free input for one Automation job."""
+
+    operation: Operation
+    role: str
+    artifact_version: str
+    approved_plan_id: str | None = None
+    confirmation: str | None = None
+    existing_realm_verified: bool = False
+
+
+@dataclass(frozen=True)
+class RunbookJob:
+    """Execution metadata safe to submit to an Automation account."""
+
+    name: str
+    operation: Operation
+    role: str
+    vm_name: str
+    worker_group: str
+    artifact_version: str
+    approved_plan_id: str | None
+    requires_confirmation: bool
+    timeout_seconds: int
+
+
+def validate_request(request: RunbookRequest) -> None:
+    """Fail closed on unknown targets, versions, or unapproved mutation intent."""
+    if request.operation not in _ALLOWED_OPERATIONS:
+        raise ValueError(f"Unsupported runbook operation: {request.operation}")
+    get_role_manifest(request.role)
+    if request.operation == "registry-schema-verify" and request.role != "apps":
+        raise ValueError("Registry schema verification is only valid for the apps role")
+    if not request.artifact_version or any(char.isspace() for char in request.artifact_version):
+        raise ValueError("Artifact version must be a non-empty immutable identifier")
+    if request.operation in {"apply", "keycloak-reconcile"}:
+        if not request.approved_plan_id:
+            raise ValueError("Mutation requires an approved plan ID")
+        if request.confirmation != "APPLY":
+            raise ValueError("Mutation requires the exact confirmation phrase APPLY")
+        if request.operation == "keycloak-reconcile" and not request.existing_realm_verified:
+            raise ValueError("Keycloak reconciliation requires an existing-realm preflight")
+    elif request.confirmation is not None or request.approved_plan_id is not None:
+        raise ValueError("Approval fields are only valid for mutation operations")
+    if request.operation == "apply" and request.role == "keycloak":
+        raise ValueError(
+            "Initial Keycloak setup is never an apply operation; use keycloak-reconcile"
+        )
+
+
+def build_job(
+    request: RunbookRequest,
+    *,
+    worker_group: str = "platform-private-workers",
+    timeout_seconds: int = 900,
+) -> RunbookJob:
+    """Create an allowlisted Automation job description without executing it."""
+    validate_request(request)
+    if not worker_group or any(char.isspace() for char in worker_group):
+        raise ValueError("Worker group must be a non-empty identifier")
+    if timeout_seconds < 30 or timeout_seconds > 3600:
+        raise ValueError("Timeout must be between 30 and 3600 seconds")
+    manifest = get_role_manifest(request.role)
+    return RunbookJob(
+        name=f"platform-{request.operation}-{request.role}",
+        operation=request.operation,
+        role=request.role,
+        vm_name=manifest.vm_name,
+        worker_group=worker_group,
+        artifact_version=request.artifact_version,
+        approved_plan_id=request.approved_plan_id,
+        requires_confirmation=request.operation in {"apply", "keycloak-reconcile"},
+        timeout_seconds=timeout_seconds,
+    )

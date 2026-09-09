@@ -185,3 +185,23 @@ az deployment sub what-if \
 ```
 
 Do not run a deployment until the generated Bicep has passed validation and the resource-group, identity, image, disk, quota, secret-RBAC, and ACA-origin assumptions have been reviewed. Runtime services remain disabled until their protected inputs are seeded.
+## Guarded WSL deployment
+
+Run the deployment wrapper from WSL. It always validates and runs a non-mutating `what-if` first. It never deploys unless both `--apply` and the exact `--confirm DEPLOY` flag are supplied:
+
+```bash
+export AZURE_ADMIN_PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+./platform/azure/scripts/deploy-platform.sh
+./platform/azure/scripts/deploy-platform.sh --apply --confirm DEPLOY
+```
+
+Use a different `.bicepparam` file with `--parameters` when promoting a specific environment. The wrapper does not accept secrets on the command line and does not create resources when run without `--apply`.
+## Test-bench Hybrid Worker Python compatibility
+
+The available Linux Hybrid Worker handler currently expects an executable named `Python` and imports the removed `imp` module. Ubuntu 24.04 provides Python 3.12 and no Python 3.10 package. For the test bench only, install the pinned self-contained CPython runtime without replacing system Python:
+
+```bash
+sudo bash platform/azure/scripts/bootstrap/install-python310-compat.sh
+```
+
+The installer installs UV under `/opt/platform/uv`, uses `uv python install 3.10` to manage the runtime under `/opt/platform/python310`, and creates `/usr/local/bin/Python` pointing to the managed Python 3.10 interpreter. It does not change `/usr/bin/python3`. This compatibility path is x86_64-only and should not be treated as the production Hybrid Worker support strategy.

@@ -62,6 +62,9 @@ param keycloakExternalUrl string
 @description('Whether to create the VM identity secret role assignments.')
 param deployRuntimeAccess bool = false
 
+@description('Whether to install the UV-managed Python 3.10 compatibility runtime for the legacy Hybrid Worker handler.')
+param enablePython310Compat bool = false
+
 @description('Key Vault secret name containing the Registry signing secret.')
 param registrySecretKeyName string = 'registry-secret-key'
 
@@ -201,8 +204,19 @@ var customData = replace(
   loadTextContent('../../scripts/systemd/platform-secret-sync.timer')
 )
 
-var customDataWithAcrName = replace(
+var customDataWithPython310CompatFlag = replace(
   customData,
+  '__PLATFORM_ENABLE_PYTHON310_COMPAT__',
+  string(enablePython310Compat)
+)
+
+var customDataWithPython310Compat = replace(
+  customDataWithPython310CompatFlag,
+  '__PLATFORM_PYTHON310_COMPAT_CONTENT__',
+  loadTextContent('../../scripts/bootstrap/install-python310-compat.sh')
+)
+var customDataWithAcrName = replace(
+  customDataWithPython310Compat,
   '__PLATFORM_ACR_NAME__',
   acrName
 )

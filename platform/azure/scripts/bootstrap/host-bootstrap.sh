@@ -6,11 +6,12 @@ ALLOY_VERSION="1.19.2-1"
 DATA_DEVICE="/dev/disk/azure/scsi1/lun0"
 DATA_MOUNT="/var/lib/platform/data"
 FORMAT_DATA_DISK="__PLATFORM_FORMAT_DATA_DISK__"
+ENABLE_PYTHON310_COMPAT="__PLATFORM_ENABLE_PYTHON310_COMPAT__"
 
 umask 027
 exec > >(logger -t platform-host-bootstrap) 2>&1
 
-if [[ "${ROLE}" == __* || "${FORMAT_DATA_DISK}" == __* ]]; then
+if [[ "${ROLE}" == __* || "${FORMAT_DATA_DISK}" == __* || "${ENABLE_PYTHON310_COMPAT}" == __* ]]; then
   echo "The platform VM bootstrap placeholders were not rendered." >&2
   exit 1
 fi
@@ -98,6 +99,14 @@ __PLATFORM_SECRET_SYNC_TIMER_EOF__
 
 __PLATFORM_ROLE_BOOTSTRAP__
 
+if [[ "${ENABLE_PYTHON310_COMPAT}" == "true" ]]; then
+  install -d -m 0755 /opt/platform/scripts
+  cat > /opt/platform/scripts/install-python310-compat.sh <<'__PLATFORM_PYTHON310_COMPAT_EOF__'
+__PLATFORM_PYTHON310_COMPAT_CONTENT__
+__PLATFORM_PYTHON310_COMPAT_EOF__
+  chmod 0755 /opt/platform/scripts/install-python310-compat.sh
+  /opt/platform/scripts/install-python310-compat.sh
+fi
 if [[ ! -e /etc/docker/daemon.json ]]; then
   install -d -m 0755 /etc/docker
   printf '%s\n' '{"log-driver":"journald"}' > /etc/docker/daemon.json

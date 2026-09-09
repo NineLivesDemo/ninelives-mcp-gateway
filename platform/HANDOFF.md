@@ -616,3 +616,134 @@ Do not delete the OpenBao VM or its data disk as a first troubleshooting step.
 The OpenBao instance is initialized, auto-unsealing, and serving the restricted
 Registry credential successfully. Recreate it only after an explicit decision
 that the Raft data and recovery material can be discarded or restored.
+
+## Hybrid Worker onboarding handoff
+
+**Updated:** 2026-09-09 22:30 UTC
+**Scope:** Azure Automation extension-based Linux User Hybrid Runbook Workers
+**Automation account:** `aa-platform-pilot` in `rg-ops`, `westus3`
+**Worker group:** `platform-workers`
+**Subscription:** `24595c03-870c-4a3e-93b3-51ec93c246bf`
+
+### Final live state
+
+All five private Ubuntu 24.04 VMs are registered as `HybridV2` workers and are reporting heartbeats:
+
+| VM | Resource group | Private IP | Worker state | Extension |
+|---|---|---:|---|---|
+| `vm-platform-edge` | `rg-edge` | `10.60.1.4` | Registered and heartbeating | `Succeeded`, `HybridWorkerExtension`, handler `1.1` |
+| `vm-platform-etcd` | `rg-etcd` | `10.60.2.4` | Registered and heartbeating | `Succeeded`, `HybridWorkerExtension`, handler `1.1` |
+| `vm-platform-openbao` | `rg-openbao` | `10.60.3.4` | Registered and heartbeating | `Succeeded`, `HybridWorkerExtension`, handler `1.1` |
+| `vm-platform-apps` | `rg-mcp-registry` | `10.60.4.4` | Registered and heartbeating | `Succeeded`, `HybridWorkerExtension`, handler `1.1` |
+| `vm-platform-keycloak` | `rg-mcp-keycloak` | `10.60.5.4` | Registered and heartbeating | `Succeeded`, `HybridWorkerExtension`, handler `1.1` |
+
+The Automation Hybrid Service URL used by every extension is the account's `automationHybridServiceUrl` value. It is not the legacy `RegistrationUrl`.
+
+### Root cause of the 401
+
+The failed onboarding attempts installed the extension before creating the corresponding `Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups/hybridRunbookWorkers` resource. Microsoft Learn's extension-based onboarding sequence requires both steps:
+
+1. Create the Hybrid Worker group.
+2. Create a worker resource in that group using a new GUID and the VM resource ID.
+3. Enable the VM's system-assigned managed identity.
+4. Install the extension with resource instance name `HybridWorkerExtension`, type `HybridWorkerForLinux`, and handler version `1.1`.
+
+The earlier manually created `platform-workers` group was empty. The extension reached the Automation endpoint but registration was rejected with HTTP 401 because the VM had not been associated with a worker resource. Creating the worker resource for `vm-platform-apps` immediately changed the result from 401 to a live heartbeat. The same sequence then succeeded for the remaining four VMs.
+
+### Important Microsoft Learn alignment
+
+The deployed configuration intentionally matches the documented values:
+
+- Extension resource instance name: `HybridWorkerExtension`
+- Publisher: `Microsoft.Azure.Automation.HybridWorker`
+- Extension type: `HybridWorkerForLinux`
+- Handler version: `1.1`
+- Public setting: `AutomationAccountURL` set to `automationHybridServiceUrl`
+- VM identity: system-assigned managed identity enabled
+- Worker resource type: `HybridV2`
+
+The old failed extension instance named `HybridWorkerForLinux` was removed from each VM before the correctly named extension was installed.
+
+### Test-bench Python compatibility
+
+Ubuntu 24.04 provides Python 3.12, but handler `1.1.45` imports the removed Python `imp` module. The supported Azure extension artifact still requires a Python 3.10-compatible runtime on this test bench.
+
+UV installed CPython `3.10.18` on every VM at:
+
+```text
+/opt/platform/uv/bin/uv
+/opt/platform/python310/cpython-3.10.18-linux-x86_64-gnu/bin/python3.10
+```
+
+The compatibility installer also creates `/usr/local/bin/Python` and `/usr/local/bin/python3`. For this test bench, `/usr/bin/python3` was redirected to the UV-managed 3.10 interpreter so the extension's `#!/usr/bin/env python3` scripts can import `imp`. The original Ubuntu binary remains available as `/usr/bin/python3.12`.
+
+This is an aggressive compatibility workaround, not a general production default. Before using these VMs for normal Ubuntu administration, test package management, cloud-init, monitoring agents, and OS maintenance. To restore the Ubuntu interpreter after worker testing, replace `/usr/bin/python3` with the approved `/usr/bin/python3.12` link or binary and keep the UV runtime only for the worker handler if a future handler supports an explicit interpreter path.
+
+The repository installer is opt-in and lives at:
+
+```text
+platform/azure/scripts/bootstrap/install-python310-compat.sh
+```
+
+### Infrastructure changes
+
+The following infrastructure behavior is now represented in Bicep and the generated ARM template:
+
+- `platform/azure/infra/modules/ops.bicep` creates the worker group when `deployHybridWorkers` is enabled.
+- The operations module creates one worker resource per configured VM resource ID using a deterministic GUID.
+- `platform/azure/infra/modules/hybrid-worker-extension.bicep` installs the VM-scoped extension with the documented instance name and handler version.
+- `platform/azure/infra/main.bicep` passes the five existing VM resource IDs into the operations module.
+- `platform/azure/infra/main.json` was regenerated from the final Bicep.
+- The worker feature remains opt-in through `deployHybridWorkers`; it is not enabled by default.
+
+Do not deploy the worker modules with `deployHybridWorkers=true` until the target VM resource IDs exist. The worker registration resources intentionally reference existing VMs.
+
+### Verification commands
+
+Use WSL Azure CLI for this environment:
+
+```bash
+az automation hrwg hrw list \
+  --resource-group rg-ops \
+  --automation-account-name aa-platform-pilot \
+  --hybrid-runbook-worker-group-name platform-workers \
+  --output table
+
+az vm extension show \
+  --resource-group rg-mcp-registry \
+  --vm-name vm-platform-apps \
+  --name HybridWorkerExtension \
+  --output json
+```
+
+Expected worker output includes `workerType: HybridV2`, a non-empty `lastSeenDateTime`, and the expected VM resource ID. Expected extension output includes `provisioningState: Succeeded`, `typePropertiesType: HybridWorkerForLinux`, and `typeHandlerVersion: 1.1`.
+
+### Validation completed
+
+- Bicep compilation succeeded with `az bicep build`.
+- Shell syntax validation succeeded for the modified deployment and Python compatibility scripts.
+- The focused runbook test suite passed: `43 passed`.
+- The test suite was local-only. It did not publish, schedule, or execute an Azure Automation runbook, and it did not connect to MongoDB, Keycloak, Azure, or the VMs.
+- All five live extensions report `Succeeded`.
+- All five live workers report heartbeats in `platform-workers`.
+
+### Remaining work
+
+The worker fleet is operational, but the Registry schema runbook has not yet been published or scheduled. The next controlled steps are:
+
+1. Build the source-only archive with `platform/runbooks/package.py`.
+2. Upload it to an immutable, private artifact location.
+3. Publish the runbook only after the artifact URI and immutable version are known.
+4. Run a harmless `discover` or `registry-schema-verify` job explicitly on `platform-workers`.
+5. Confirm job output and audit records.
+6. Add a schedule only after one manual read-only job succeeds.
+
+Do not treat the local `43 passed` result as proof of Azure Automation execution. It proves the runbook modules and validation logic pass their focused local tests only.
+
+### Operational cautions
+
+- Do not rerun Keycloak bootstrap to troubleshoot Registry authorization; the Registry scope repair was separate and already seeded.
+- Do not drop MongoDB collections as a worker troubleshooting step.
+- Do not put connection strings, bearer tokens, or secret values into Run Command arguments or handoff documents.
+- Do not blindly retry failed extensions. First verify the worker resource exists in the Automation group, then verify the extension instance name, handler type, handler version, and Automation Hybrid Service URL.
+- Keep the `/usr/bin/python3` compatibility switch documented as test-bench-only until the operating-system impact is explicitly accepted.
