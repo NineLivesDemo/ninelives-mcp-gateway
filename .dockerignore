@@ -60,6 +60,11 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+.openbao/
+.openbao/**
+.secrets/
+.platform-secrets/
+.platform-secrets/**
 
 # Large binaries
 *.bin
@@ -79,5 +84,11 @@ agent_security_scans/
 skill_security_scans/
 credentials-provider/
 .oauth-tokens/
+.old.oauth-tokens/
+.access-token
+.access_token
+generate-token.sh
+token_ouath.sh
+validate_token.sh
 .scratchpad/
 # frontend/build/ - KEEP THIS, needed by registry service

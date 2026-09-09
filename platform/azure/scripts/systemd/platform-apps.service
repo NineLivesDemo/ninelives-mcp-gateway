@@ -1,0 +1,21 @@
+[Unit]
+Description=Platform Registry application Compose service
+After=network-online.target docker.service platform-apps-env.service
+Wants=network-online.target
+Requires=docker.service platform-apps-env.service
+ConditionPathExists=/opt/platform/compose/apps/compose.yaml
+ConditionPathExists=/etc/platform/secrets/registry.env
+ConditionPathExists=/etc/platform/secrets/auth-server.env
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/platform/compose/apps
+ExecStartPre=/usr/local/sbin/platform-acr-login
+ExecStart=/usr/bin/docker compose -f /opt/platform/compose/apps/compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /opt/platform/compose/apps/compose.yaml down
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

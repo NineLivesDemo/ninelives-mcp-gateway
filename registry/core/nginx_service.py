@@ -93,6 +93,9 @@ _PINGFEDERATE_CA_BUNDLE_DEFAULT: str = "/etc/nginx/certs/pingfederate-ca.pem"
 _KEYCLOAK_CA_BUNDLE_ENV: str = "KEYCLOAK_CA_BUNDLE"
 _KEYCLOAK_CA_BUNDLE_DEFAULT: str = "/etc/nginx/certs/keycloak-ca.pem"
 
+_AUTH_SERVER_CA_BUNDLE_ENV: str = "AUTH_SERVER_CA_BUNDLE"
+_AUTH_SERVER_CA_BUNDLE_DEFAULT: str = "/etc/ssl/certs/ca-certificates.crt"
+
 # Depth of the certificate chain nginx will verify for an IdP upstream.
 # 2 accommodates a leaf signed by an intermediate under the supplied root.
 _IDP_SSL_VERIFY_DEPTH: int = 2
@@ -272,6 +275,48 @@ def _render_keycloak_proxy_ssl(
         host=keycloak_host,
         ca_bundle=_resolve_keycloak_ca_bundle(),
     )
+
+
+def _inject_auth_server_proxy_ssl(
+    config_content: str,
+    scheme: str,
+    host: str,
+    port: str,
+) -> str:
+    """Add fail-closed TLS/SNI directives to auth-server proxy locations."""
+    if scheme != "https":
+        return config_content
+
+    ssl_directives = _render_idp_proxy_ssl(
+        idp_label="auth-server",
+        base_url_env="AUTH_SERVER_URL",
+        scheme=scheme,
+        host=host,
+        ca_bundle=_resolve_ca_bundle(
+            _AUTH_SERVER_CA_BUNDLE_ENV,
+            _AUTH_SERVER_CA_BUNDLE_DEFAULT,
+        ),
+    )
+    proxy_pattern = re.compile(
+        rf"^(?P<indent>\s*)proxy_pass https://{re.escape(host)}:{re.escape(port)}/[^;]+;\n",
+        flags=re.MULTILINE,
+    )
+
+    def add_ssl_directives(match: re.Match[str]) -> str:
+        indent = match.group("indent")
+        directives = "\n".join(
+            f"{indent}{line.strip()}" for line in ssl_directives.splitlines()
+        )
+        return f"{match.group(0)}{directives}\n"
+
+    rendered, match_count = proxy_pattern.subn(add_ssl_directives, config_content)
+    if match_count == 0:
+        logger.warning(
+            "No auth-server proxy locations matched for HTTPS upstream %s:%s",
+            host,
+            port,
+        )
+    return rendered
 
 
 def _resolve_mcp_proxy_read_timeout_seconds() -> int:
@@ -1230,7 +1275,7 @@ class NginxConfigService:
             # (marker disabled), matching auth_server's empty-secret pass-through.
             config_content = config_content.replace(
                 "{{NGINX_MARKER_SECRET}}",
-                os.environ.get("AUTH_SERVER_NGINX_MARKER_SECRET", ""),
+                self._sanitize_for_nginx_set(settings.auth_server_nginx_marker_secret),
             )
             config_content = config_content.replace("{{KEYCLOAK_SCHEME}}", keycloak_scheme)
             config_content = config_content.replace("{{KEYCLOAK_HOST}}", keycloak_host)
@@ -1287,11 +1332,13 @@ class NginxConfigService:
             auth_server_url = os.environ.get("AUTH_SERVER_URL", "http://auth-server:8888")
             try:
                 parsed_auth = urlparse(auth_server_url)
+                auth_scheme = (parsed_auth.scheme or "http").lower()
+                if auth_scheme not in {"http", "https"}:
+                    raise ValueError(f"unsupported URL scheme '{auth_scheme}'")
                 auth_host = parsed_auth.hostname or "auth-server"
                 if parsed_auth.port:
                     auth_port = str(parsed_auth.port)
                 else:
-                    auth_scheme = parsed_auth.scheme or "http"
                     auth_port = "443" if auth_scheme == "https" else "8888"
 
                 logger.info(
@@ -1304,8 +1351,16 @@ class NginxConfigService:
                 )
                 auth_host = "auth-server"
                 auth_port = "8888"
+                auth_scheme = "http"
+            config_content = config_content.replace("{{AUTH_SERVER_SCHEME}}", auth_scheme)
             config_content = config_content.replace("{{AUTH_SERVER_HOST}}", auth_host)
             config_content = config_content.replace("{{AUTH_SERVER_PORT}}", auth_port)
+            config_content = _inject_auth_server_proxy_ssl(
+                config_content,
+                auth_scheme,
+                auth_host,
+                auth_port,
+            )
 
             # Real client-IP recovery (TRUSTED_REAL_IP_CIDRS). Empty by default so
             # edge deployments emit nothing; when trusted proxy CIDRs are set, the

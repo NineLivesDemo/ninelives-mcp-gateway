@@ -8,7 +8,10 @@ from urllib.parse import urlparse
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from registry.common.secret_key import validate_secret_key
+from registry.common.secret_key import (
+    validate_secret_key,
+    validate_signing_secret,
+)
 
 
 def _normalize_cors_origin(value: str) -> str | None:
@@ -1440,6 +1443,10 @@ class Settings(BaseSettings):
     )
     openbao_namespace: str = Field(default="", description="OpenBao namespace (optional).")
     openbao_kv_mount: str = Field(default="secret", description="OpenBao KV v2 mount point.")
+    openbao_ca_bundle: str = Field(
+        default="",
+        description="Optional CA bundle path used only for OpenBao TLS verification.",
+    )
     openbao_auth_method: str = Field(
         default="token",
         description="OpenBao auth method: token | kubernetes | approle.",
@@ -1863,20 +1870,10 @@ class Settings(BaseSettings):
         # validated (whitespace-stripped) value so the registry and auth_server
         # derive an identical signing key from the same environment variable.
         self.secret_key = validate_secret_key(self.secret_key)
-        if not self.auth_server_nginx_marker_secret:
-            raise RuntimeError(
-                "AUTH_SERVER_NGINX_MARKER_SECRET environment variable is required. "
-                "Set it to a strong random value (at least 32 bytes), identical across all "
-                "auth_server and registry replicas (see chart values.yaml). Without it, the "
-                "auth_server mints mcp-proxy tokens unconditionally, letting a direct :8888 "
-                "/validate call with a forged X-Resolved-Upstream bypass nginx and obtain one."
-            )
-        if len(self.auth_server_nginx_marker_secret.encode()) < 32:
-            raise RuntimeError(
-                "AUTH_SERVER_NGINX_MARKER_SECRET must be at least 32 bytes long. Set it to a "
-                "strong random value at least 32 bytes long, identical across all auth_server "
-                "and registry replicas (see chart values.yaml)."
-            )
+        self.auth_server_nginx_marker_secret = validate_signing_secret(
+            self.auth_server_nginx_marker_secret,
+            "AUTH_SERVER_NGINX_MARKER_SECRET",
+        )
         self._validate_egress_auth_config()
 
     def _validate_egress_auth_config(self) -> None:

@@ -1,0 +1,25 @@
+services:
+  keycloak:
+    image: __PLATFORM_KEYCLOAK_IMAGE__
+    env_file:
+      - /etc/platform/secrets/keycloak.env
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://__PLATFORM_KEYCLOAK_DB_HOST__:5432/__PLATFORM_KEYCLOAK_DB_NAME__?sslmode=require"
+      KC_DB_USERNAME: __PLATFORM_KEYCLOAK_DB_USERNAME__
+      KEYCLOAK_ADMIN: admin
+      KC_HOSTNAME: https://__PLATFORM_KEYCLOAK_HOSTNAME__
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_FEATURES: token-exchange
+    command:
+      - start
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "__PLATFORM_KEYCLOAK_PRIVATE_IP__:8080:8080"
+    restart: unless-stopped

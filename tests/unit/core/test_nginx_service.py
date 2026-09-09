@@ -74,6 +74,8 @@ def nginx_service():
             mock_settings.deployment_mode.value = "with-gateway"
             mock_settings.nginx_config_path = "/etc/nginx/conf.d/nginx_rev_proxy.conf"
             mock_settings.auth_server_url = "http://auth-server:8888"
+            mock_settings.auth_server_nginx_marker_secret = "test-marker-secret"
+            mock_settings.auth_server_nginx_marker_secret = "test-marker-secret"
 
             service = NginxConfigService()
             yield service
@@ -518,6 +520,7 @@ async def test_a2a_blocks_emitted_when_flag_enabled(
         mock_settings.a2a_reverse_proxy_effective = True
         mock_settings.nginx_config_path = "/etc/nginx/conf.d/nginx_rev_proxy.conf"
         mock_settings.auth_server_url = "http://auth-server:8888"
+        mock_settings.auth_server_nginx_marker_secret = "test-marker-secret"
         with patch.object(nginx_service.nginx_template_path, "exists", return_value=True):
             with patch("builtins.open", mock_open(read_data=template_content)):
                 with patch("registry.health.service.health_service", mock_health_service):
@@ -552,6 +555,7 @@ async def test_a2a_blocks_skipped_when_flag_disabled(
         mock_settings.a2a_reverse_proxy_effective = False
         mock_settings.nginx_config_path = "/etc/nginx/conf.d/nginx_rev_proxy.conf"
         mock_settings.auth_server_url = "http://auth-server:8888"
+        mock_settings.auth_server_nginx_marker_secret = "test-marker-secret"
         with patch.object(nginx_service.nginx_template_path, "exists", return_value=True):
             with patch("builtins.open", mock_open(read_data=template_content)):
                 with patch("registry.health.service.health_service", mock_health_service):
@@ -602,6 +606,7 @@ async def test_enabling_agent_changes_rendered_config_hash(
             mock_settings.a2a_reverse_proxy_enabled = True
             mock_settings.nginx_config_path = "/etc/nginx/conf.d/nginx_rev_proxy.conf"
             mock_settings.auth_server_url = "http://auth-server:8888"
+            mock_settings.auth_server_nginx_marker_secret = "test-marker-secret"
             with patch.object(nginx_service.nginx_template_path, "exists", return_value=True):
                 with patch("builtins.open", mock_open(read_data=template_content)):
                     with patch("registry.health.service.health_service", mock_health_service):
@@ -1450,7 +1455,7 @@ async def test_generate_config_async_auth_server_url_parsing(
     """Test AUTH_SERVER_URL parsing substitutes placeholders (#553)."""
     template_content = """
 server {
-    proxy_pass http://{{AUTH_SERVER_HOST}}:{{AUTH_SERVER_PORT}}/validate;
+    proxy_pass {{AUTH_SERVER_SCHEME}}://{{AUTH_SERVER_HOST}}:{{AUTH_SERVER_PORT}}/validate;
 {{LOCATION_BLOCKS}}
 }
 """
@@ -1467,7 +1472,7 @@ server {
                         env_values = {
                             "AUTH_PROVIDER": "keycloak",
                             "KEYCLOAK_URL": "http://keycloak:8080",
-                            "AUTH_SERVER_URL": "http://auth.internal.svc.cluster.local:8888",
+                            "AUTH_SERVER_URL": "https://auth.internal.svc.cluster.local:8888",
                             "NGINX_DISABLE_API_AUTH_REQUEST": "false",
                         }
                         with patch(
@@ -1481,6 +1486,13 @@ server {
                             written_content = mock_atomic_write.call_args_list[0][0][1]
                             assert "auth.internal.svc.cluster.local" in written_content
                             assert "8888" in written_content
+                            assert "https://auth.internal.svc.cluster.local:8888/validate" in written_content
+                            assert "proxy_ssl_server_name on;" in written_content
+                            assert (
+                                "proxy_ssl_name auth.internal.svc.cluster.local;"
+                                in written_content
+                            )
+                            assert "{{AUTH_SERVER_SCHEME}}" not in written_content
                             assert "{{AUTH_SERVER_HOST}}" not in written_content
                             assert "{{AUTH_SERVER_PORT}}" not in written_content
 
@@ -2279,6 +2291,61 @@ def test_conf_does_not_rate_limit_validate_subrequest(conf_path):
     body = body[: end if end != -1 else len(body)]
     assert "limit_req" not in body
     assert "limit_conn" not in body
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("conf_path", [_HTTP_ONLY_CONF, _HTTP_AND_HTTPS_CONF])
+def test_conf_uses_http11_for_validate_subrequest(conf_path):
+    """ACA ingress requires HTTP/1.1 for the internal auth validation hop."""
+    text = conf_path.read_text()
+    marker = "location = /validate {"
+    assert marker in text
+    idx = text.index(marker)
+    body = text[idx : idx + 1600]
+    end = body.find("\n    }")
+    body = body[: end if end != -1 else len(body)]
+    assert "proxy_http_version 1.1;" in body
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("conf_path", [_HTTP_ONLY_CONF, _HTTP_AND_HTTPS_CONF])
+def test_conf_allowlists_validate_subrequest_headers(conf_path):
+    """The auth hop must not forward arbitrary edge request headers to ACA."""
+    text = conf_path.read_text()
+    marker = "location = /validate {"
+    assert marker in text
+    idx = text.index(marker)
+    end = text.find("\n        # Short timeouts for auth validation", idx)
+    body = text[idx : end if end != -1 else len(text)]
+    assert "proxy_pass_request_headers off;" in body
+    assert "proxy_pass_request_body off;" in body
+    assert 'proxy_set_header Content-Length "";' in body
+    assert 'proxy_set_header Connection "";' in body
+    for header in (
+        "Authorization",
+        "X-Authorization",
+        "Cookie",
+        "X-Body",
+        "X-Body-Uninspectable",
+        "Mcp-Session-Id",
+    ):
+        assert f"proxy_set_header {header} " in body
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("conf_path", [_HTTP_ONLY_CONF, _HTTP_AND_HTTPS_CONF])
+def test_conf_uses_internal_host_for_auth_oauth_proxy(conf_path):
+    """OAuth requests must use the auth service host for internal ACA routing."""
+    text = conf_path.read_text()
+    blocks = re.findall(
+        r"location /oauth2/(?:login|callback)/[a-z0-9_-]+ \{.*?\n    \}",
+        text,
+        re.DOTALL,
+    )
+    assert blocks
+    assert all("proxy_pass {{AUTH_SERVER_SCHEME}}://{{AUTH_SERVER_HOST}}:" in block for block in blocks)
+    assert all("proxy_set_header Host $proxy_host;" in block for block in blocks)
+    assert all("proxy_set_header Host $http_host;" not in block for block in blocks)
 
 
 # =============================================================================

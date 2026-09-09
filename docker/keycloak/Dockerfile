@@ -3,7 +3,7 @@ FROM quay.io/keycloak/keycloak:25.0 as builder
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true
 ENV KC_FEATURES=token-exchange
-ENV KC_DB=mysql
+ENV KC_DB=postgres
 
 WORKDIR /opt/keycloak
 

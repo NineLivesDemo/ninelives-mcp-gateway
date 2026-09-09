@@ -56,7 +56,7 @@
         "saml.force.post.binding": "false",
         "saml.multivalued.roles": "false",
         "saml.encrypt": "false",
-        "post.logout.redirect.uris": "+",
+        "post.logout.redirect.uris": "${env.REGISTRY_URL}/logout",
         "oauth2.device.authorization.grant.enabled": "false",
         "oidc.ciba.grant.enabled": "false",
         "backchannel.logout.session.required": "true",

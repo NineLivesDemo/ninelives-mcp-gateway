@@ -762,7 +762,8 @@ shared in the stack `shared-secret`.
 | OpenBao namespace | `OPENBAO_NAMESPACE` | — | `registry.egressAuth.openbao.namespace` | Enterprise namespaces only.                                       |
 | OpenBao KV mount | `OPENBAO_KV_MOUNT` | — | `registry.egressAuth.openbao.kvMount` | KV v2 mount point (default `secret`).                             |
 | OpenBao auth method | `OPENBAO_AUTH_METHOD` | — | `registry.egressAuth.openbao.authMethod` | `token` \| `kubernetes`. EKS uses `kubernetes` (no static token). |
-| OpenBao token **(secret)** | `OPENBAO_TOKEN` | — | via secret | Static OpenBao/Vault token, root access to all vaulted egress credentials. **Required when `SECRET_STORE_BACKEND=openbao` with `OPENBAO_AUTH_METHOD=token`** — docker-compose references it as `${OPENBAO_TOKEN:?}`, so the stack refuses to start if unset. Not needed with `authMethod=kubernetes` (EKS), which uses the ServiceAccount instead. |
+| OpenBao CA bundle | `OPENBAO_CA_BUNDLE` | — | — | Optional absolute CA bundle path used only for OpenBao TLS verification. |
+| OpenBao token file **(secret)** | `OPENBAO_TOKEN_FILE` | — | via secret | Protected file containing a static OpenBao token scoped by policy to the egress credential prefix. The Azure VM exposes it to the Registry at `/run/secrets/openbao_registry_token`; prefer this over `OPENBAO_TOKEN` so the token is not rendered into the container environment. |
 | OpenBao role | `OPENBAO_ROLE` | — | `registry.egressAuth.openbao.role` | Kubernetes-auth role bound to the registry ServiceAccount.        |
 
 **Backend by surface:** ECS wires the `secrets-manager` knobs by default; an

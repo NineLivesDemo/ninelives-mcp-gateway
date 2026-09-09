@@ -1,0 +1,50 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd@sha256:0934690612905554eb61ddefb9faaaecb47c2f6931dbb453e694358092ee8990
+    container_name: platform-etcd
+    command:
+      - /usr/local/bin/etcd
+    environment:
+      ETCD_NAME: platform-etcd
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: https://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: https://etcd.platform.internal:2379
+      ETCD_LISTEN_PEER_URLS: http://127.0.0.1:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2380
+      ETCD_INITIAL_CLUSTER: platform-etcd=http://127.0.0.1:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: platform-etcd
+      ETCDCTL_API: "3"
+      ETCD_CLIENT_CERT_AUTH: "true"
+      ETCD_TRUSTED_CA_FILE: /etc/etcd/tls/platform-ca.crt
+      ETCD_CERT_FILE: /etc/etcd/tls/etcd-server.crt
+      ETCD_KEY_FILE: /etc/etcd/tls/etcd-server.key
+      ETCD_CLIENT_CERT_FILE: /etc/etcd/tls/etcd-client.crt
+      ETCD_CLIENT_KEY_FILE: /etc/etcd/tls/etcd-client.key
+    ports:
+      - "10.60.2.4:2379:2379"
+    volumes:
+      - /var/lib/platform/data/etcd:/etcd-data
+      - /etc/platform/tls:/etc/etcd/tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - etcdctl
+        - --endpoints=https://etcd.platform.internal:2379
+        - --cacert=/etc/etcd/tls/platform-ca.crt
+        - --cert=/etc/etcd/tls/etcd-client.crt
+        - --key=/etc/etcd/tls/etcd-client.key
+        - endpoint
+        - health
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped

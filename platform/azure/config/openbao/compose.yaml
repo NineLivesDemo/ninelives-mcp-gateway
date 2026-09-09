@@ -1,0 +1,39 @@
+services:
+  openbao:
+    image: openbao/openbao@sha256:80b71b06de94d9b11da83fd1cdb70cbd84b375739620c18b12d76b4f5ffe95ab
+    container_name: platform-openbao
+    command:
+      - bao
+      - server
+      - -config=/openbao/config/openbao.hcl
+    environment:
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:?AZURE_TENANT_ID must be provided}
+      VAULT_AZUREKEYVAULT_VAULT_NAME: ${VAULT_AZUREKEYVAULT_VAULT_NAME:?VAULT_AZUREKEYVAULT_VAULT_NAME must be provided}
+      VAULT_AZUREKEYVAULT_KEY_NAME: ${VAULT_AZUREKEYVAULT_KEY_NAME:?VAULT_AZUREKEYVAULT_KEY_NAME must be provided}
+    ports:
+      - "10.60.3.4:8200:8200"
+    volumes:
+      - /var/lib/platform/data/openbao:/openbao/data
+      - /opt/platform/config/openbao:/openbao/config:ro
+      - /etc/platform/tls:/openbao/tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    group_add:
+      - "636"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          VAULT_ADDR=https://openbao.platform.internal:8200
+          VAULT_CACERT=/openbao/tls/platform-ca.crt
+          bao status -format=json >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped

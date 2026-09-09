@@ -803,11 +803,21 @@ class TestSettingsSecretKey:
     def test_short_marker_secret_rejected(self, monkeypatch, tmp_path) -> None:
         """An AUTH_SERVER_NGINX_MARKER_SECRET shorter than 32 bytes is rejected."""
         monkeypatch.chdir(tmp_path)
-        with pytest.raises(RuntimeError, match="AUTH_SERVER_NGINX_MARKER_SECRET must be at least"):
+        with pytest.raises(RuntimeError, match="AUTH_SERVER_NGINX_MARKER_SECRET.*at least 32"):
             Settings(
                 secret_key="a-valid-secret-key-of-at-least-32-bytes",
                 auth_server_nginx_marker_secret="short",
             )
+
+    def test_marker_secret_is_whitespace_stripped(self) -> None:
+        """Trailing secret-file newlines do not reach auth or generated Nginx."""
+        marker = "a-sufficiently-long-random-marker-secret-value"
+        settings = Settings(
+            secret_key="a-valid-secret-key-of-at-least-32-bytes",
+            auth_server_nginx_marker_secret=f"{marker}\n",
+        )
+
+        assert settings.auth_server_nginx_marker_secret == marker
 
 
 # =============================================================================

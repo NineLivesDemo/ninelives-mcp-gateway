@@ -1,0 +1,19 @@
+[Unit]
+Description=Render platform edge Compose inputs
+After=network-online.target platform-secret-sync.service
+Wants=network-online.target
+Requires=platform-secret-sync.service
+ConditionPathExists=/etc/platform/config/edge-origin.env
+ConditionPathExists=/etc/platform/secrets/apisix-admin-key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/platform-edge-render
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/platform/secrets /opt/platform/compose/edge
+
+[Install]
+WantedBy=multi-user.target

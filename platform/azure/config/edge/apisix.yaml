@@ -1,0 +1,45 @@
+apisix:
+  node_listen: 9080
+  enable_ipv6: false
+  ssl:
+    ssl_trusted_certificate: /etc/apisix/tls/platform-ca.crt
+
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  admin:
+    admin_key:
+      - name: admin
+        key: ${{APISIX_ADMIN_KEY}}
+        role: admin
+    allow_admin:
+      - 127.0.0.0/8
+      - 172.30.0.0/28
+    admin_listen:
+      ip: 0.0.0.0
+      port: 9180
+  etcd:
+    host:
+      - https://etcd.platform.internal:2379
+    prefix: /apisix
+    timeout: 30
+    startup_retry: 5
+    tls:
+      cert: /etc/apisix/tls/etcd-client.crt
+      key: /etc/apisix/tls/etcd-client.key
+      verify: true
+      sni: etcd.platform.internal
+
+nginx_config:
+  error_log_level: warn
+  http:
+    enable_access_log: true
+    access_log_format: |
+      "$remote_addr - $remote_user [$time_local] $http_host \"$request_method $uri $server_protocol\" $status $body_bytes_sent $request_time \"$http_user_agent\" $upstream_addr $upstream_status $upstream_response_time \"$request_id\""
+    access_log_format_escape: default
+  http_configuration_snippet: |
+    # Keycloak OIDC responses can include large Location and Set-Cookie headers.
+    proxy_buffer_size 32k;
+    proxy_buffers 8 32k;
+    proxy_busy_buffers_size 64k;

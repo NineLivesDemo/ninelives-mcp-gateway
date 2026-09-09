@@ -1,0 +1,31 @@
+{
+  "id": "registry",
+  "uri": "/*",
+  "upstream": {
+    "type": "roundrobin",
+    "scheme": "https",
+    "pass_host": "rewrite",
+    "upstream_host": "__REGISTRY_HOST_HEADER__",
+    "nodes": {
+      "__REGISTRY_ORIGIN_HOST__:443": 1
+    }
+  },
+  "plugins": {
+    "proxy-rewrite": {
+      "headers": {
+        "set": {
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Port": "443",
+          "X-Forwarded-Host": "__REGISTRY_HOST_HEADER__"
+        }
+      }
+    },
+    "limit-count": {
+      "count": 120,
+      "time_window": 60,
+      "rejected_code": 429,
+      "key": "remote_addr",
+      "policy": "local"
+    }
+  }
+}

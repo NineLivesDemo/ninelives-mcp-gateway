@@ -1,0 +1,18 @@
+[Unit]
+Description=Render Registry application container secrets
+After=network-online.target platform-secret-sync.service
+Wants=network-online.target
+Requires=platform-secret-sync.service
+ConditionPathExists=/etc/platform/secrets/raw/registry-secret-key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/platform-apps-render
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/platform/secrets
+
+[Install]
+WantedBy=multi-user.target

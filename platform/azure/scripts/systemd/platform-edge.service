@@ -1,0 +1,20 @@
+[Unit]
+Description=Platform edge Compose service
+After=network-online.target docker.service platform-edge-env.service
+Wants=network-online.target
+Requires=docker.service platform-edge-env.service
+ConditionPathExists=/opt/platform/compose/edge/compose.yaml
+ConditionPathExists=/etc/platform/secrets/edge.env
+ConditionPathExists=/etc/platform/secrets/cloudflare-tunnel-token
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/platform/compose/edge
+ExecStart=/usr/bin/docker compose --env-file /etc/platform/secrets/edge.env -f /opt/platform/compose/edge/compose.yaml up -d
+ExecStop=/usr/bin/docker compose --env-file /etc/platform/secrets/edge.env -f /opt/platform/compose/edge/compose.yaml down
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Platform etcd Compose service
+After=network-online.target docker.service platform-secret-sync.service
+Wants=network-online.target
+Requires=docker.service platform-secret-sync.service
+ConditionPathExists=/opt/platform/compose/etcd/compose.yaml
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/platform/compose/etcd
+ExecStart=/usr/bin/docker compose -f /opt/platform/compose/etcd/compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /opt/platform/compose/etcd/compose.yaml down
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

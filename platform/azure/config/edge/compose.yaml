@@ -1,0 +1,64 @@
+services:
+  apisix:
+    image: docker.io/apache/apisix@sha256:84e6b5e787e9f889ebff88161cb9a16599bafcffa236c6b54c7f779a0655940d
+    container_name: platform-apisix
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?APISIX_ADMIN_KEY must be rendered before starting the edge}
+    ports:
+      - "10.60.1.4:9080:9080"
+      - "127.0.0.1:9180:9180"
+    volumes:
+      - /opt/platform/config/edge/apisix.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - /etc/platform/tls:/etc/apisix/tls:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  apisix-bootstrap:
+    image: curlimages/curl@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+    container_name: platform-apisix-bootstrap
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?APISIX_ADMIN_KEY must be rendered before starting the edge}
+    entrypoint:
+      - /bin/sh
+    command:
+      - /usr/local/bin/platform-edge-bootstrap.sh
+    volumes:
+      - /opt/platform/compose/edge/registry-route.json:/config/registry-route.json:ro
+      - /opt/platform/compose/edge/keycloak-route.json:/config/keycloak-route.json:ro
+      - /usr/local/sbin/platform-edge-bootstrap.sh:/usr/local/bin/platform-edge-bootstrap.sh:ro
+    depends_on:
+      apisix:
+        condition: service_started
+    restart: "no"
+
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:e7d598c81b1890dd3438206f5403fa6389d0d50833d12bc94c87d8b1e27cfde7
+    container_name: platform-cloudflared
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token-file
+      - /run/secrets/cloudflare-tunnel-token
+    volumes:
+      - /etc/platform/secrets/cloudflare-tunnel-token:/run/secrets/cloudflare-tunnel-token:ro
+    depends_on:
+      apisix-bootstrap:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/28

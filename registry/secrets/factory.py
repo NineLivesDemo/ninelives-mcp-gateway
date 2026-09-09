@@ -91,6 +91,13 @@ def _build_openbao() -> SecretStoreBase:
     client_kwargs = {"url": settings.openbao_addr}
     if settings.openbao_namespace:
         client_kwargs["namespace"] = settings.openbao_namespace
+    if settings.openbao_ca_bundle:
+        ca_bundle = settings.openbao_ca_bundle
+        if not os.path.isabs(ca_bundle) or not os.path.isfile(ca_bundle):
+            raise ValueError(
+                "OPENBAO_CA_BUNDLE must be an existing absolute file path when configured."
+            )
+        client_kwargs["verify"] = ca_bundle
     client = hvac.Client(**client_kwargs)
 
     method = settings.openbao_auth_method

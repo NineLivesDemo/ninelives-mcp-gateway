@@ -1,0 +1,20 @@
+[Unit]
+Description=Platform OpenBao Compose service
+After=network-online.target docker.service platform-secret-sync.service
+Wants=network-online.target
+Requires=docker.service platform-secret-sync.service
+ConditionPathExists=/opt/platform/compose/openbao/compose.yaml
+ConditionPathExists=/opt/platform/config/openbao/openbao.hcl
+ConditionPathExists=/etc/platform/config/openbao.env
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/platform/compose/openbao
+ExecStart=/usr/bin/docker compose --env-file /etc/platform/config/openbao.env -f /opt/platform/compose/openbao/compose.yaml up -d
+ExecStop=/usr/bin/docker compose --env-file /etc/platform/config/openbao.env -f /opt/platform/compose/openbao/compose.yaml down
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

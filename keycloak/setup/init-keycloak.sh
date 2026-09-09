@@ -4,11 +4,12 @@
 
 set -e
 
-# These will be set properly after loading .env in main()
-KEYCLOAK_URL=""  # Will be overridden with KEYCLOAK_ADMIN_URL after .env is loaded
+# These are overridden by .env when present, while preserving explicitly
+# exported values for secure operator-controlled invocations.
+KEYCLOAK_URL=""
 REALM="mcp-gateway"
-KEYCLOAK_ADMIN=""
-KEYCLOAK_ADMIN_PASSWORD=""
+KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -133,6 +134,9 @@ create_clients() {
             "http://localhost:7860",
             "+"
         ],
+        "attributes": {
+            "post.logout.redirect.uris": "'${REGISTRY_URL:-http://localhost:7860}'/logout"
+        },
         "protocol": "openid-connect",
         "standardFlowEnabled": true,
         "implicitFlowEnabled": false,

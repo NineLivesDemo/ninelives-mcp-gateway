@@ -1,0 +1,16 @@
+[Unit]
+Description=Render Keycloak environment from Azure Key Vault secrets
+After=platform-secret-sync.service
+Requires=platform-secret-sync.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/platform-keycloak-render
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/platform/secrets
+
+[Install]
+WantedBy=multi-user.target

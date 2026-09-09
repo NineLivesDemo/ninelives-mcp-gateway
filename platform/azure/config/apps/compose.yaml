@@ -1,0 +1,113 @@
+secrets:
+  openbao_registry_token:
+    file: /etc/platform/secrets/raw/openbao-registry-token
+
+services:
+  registry:
+    image: __PLATFORM_REGISTRY_IMAGE__
+    env_file:
+      - /etc/platform/secrets/registry.env
+    environment:
+      DEPLOYMENT_MODE: with-gateway
+      REGISTRY_MODE: full
+      REGISTRY_URL: __PLATFORM_REGISTRY_EXTERNAL_URL__
+      AUTH_SERVER_URL: http://auth-server:8888
+      AUTH_SERVER_EXTERNAL_URL: __PLATFORM_REGISTRY_EXTERNAL_URL__
+      STORAGE_BACKEND: mongodb-atlas
+      SECRET_STORE_BACKEND: openbao
+      OPENBAO_ADDR: https://openbao.platform.internal:8200
+      OPENBAO_AUTH_METHOD: token
+      OPENBAO_KV_MOUNT: secret
+      OPENBAO_TOKEN_FILE: /run/secrets/openbao_registry_token
+      OPENBAO_CA_BUNDLE: /etc/platform/tls/platform-ca.crt
+      MCP_HTTPS_REQUIRED: "true"
+      SESSION_COOKIE_SECURE: "true"
+      TRUSTED_PROXY_HOPS: "1"
+      TRUSTED_EXTERNAL_HOSTS: __PLATFORM_REGISTRY_HOSTNAME__
+      TRUSTED_REAL_IP_CIDRS: 10.60.1.0/24
+      KEYCLOAK_ENABLED: "true"
+      AUTH_PROVIDER: keycloak
+      KEYCLOAK_URL: __PLATFORM_KEYCLOAK_URL__
+      KEYCLOAK_EXTERNAL_URL: __PLATFORM_KEYCLOAK_EXTERNAL_URL__
+      KEYCLOAK_REALM: mcp-gateway
+      KEYCLOAK_CLIENT_ID: mcp-gateway-web
+      KEYCLOAK_M2M_CLIENT_ID: mcp-gateway-m2m
+      KEYCLOAK_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      MCP_TELEMETRY_DISABLED: "1"
+      APP_LOG_DIR: /var/log/containers/ai-registry
+      APP_LOG_FILE_FORMAT: json
+      APP_LOG_CONSOLE_FORMAT: json
+      MCP_TOOLS_LIST_FILTER_ENABLED: "true"
+      BATCH_WORKER_ENABLED: "true"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    secrets:
+      - openbao_registry_token
+    volumes:
+      - /var/lib/platform/apps/registry/servers:/app/registry/servers
+      - /var/lib/platform/apps/registry/agents:/app/registry/agents
+      - /var/lib/platform/apps/registry/models:/app/registry/models
+      - /var/lib/platform/apps/registry/security_scans:/app/security_scans
+      - /etc/platform/tls/platform-ca.crt:/etc/platform/tls/platform-ca.crt:ro
+      - /var/log/containers/ai-registry:/var/log/containers/ai-registry
+    ports:
+      - "__PLATFORM_APP_PRIVATE_IP__:8080:8080"
+    depends_on:
+      auth-server:
+        condition: service_started
+    restart: unless-stopped
+
+  auth-server:
+    image: __PLATFORM_AUTH_SERVER_IMAGE__
+    env_file:
+      - /etc/platform/secrets/auth-server.env
+    environment:
+      REGISTRY_URL: __PLATFORM_REGISTRY_EXTERNAL_URL__
+      AUTH_SERVER_EXTERNAL_URL: __PLATFORM_REGISTRY_EXTERNAL_URL__
+      AUTH_PROVIDER: keycloak
+      KEYCLOAK_ENABLED: "true"
+      KEYCLOAK_URL: __PLATFORM_KEYCLOAK_URL__
+      KEYCLOAK_EXTERNAL_URL: __PLATFORM_KEYCLOAK_EXTERNAL_URL__
+      KEYCLOAK_REALM: mcp-gateway
+      KEYCLOAK_CLIENT_ID: mcp-gateway-web
+      KEYCLOAK_M2M_CLIENT_ID: mcp-gateway-m2m
+      EGRESS_REGISTRY_INTERNAL_URL: http://registry:8080
+      APP_LOG_DIR: /var/log/containers/ai-registry
+      APP_LOG_FILE_FORMAT: json
+      APP_LOG_CONSOLE_FORMAT: json
+      MCP_TOOLS_LIST_FILTER_ENABLED: "true"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - /var/log/containers/ai-registry:/var/log/containers/ai-registry
+    ports:
+      - "127.0.0.1:8888:8888"
+    restart: unless-stopped
+
+  mcpgw-server:
+    image: __PLATFORM_MCPGW_IMAGE__
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8003"
+      REGISTRY_BASE_URL: http://registry:8080
+      REGISTRY_EXTERNAL_URL: __PLATFORM_REGISTRY_EXTERNAL_URL__
+      APP_LOG_DIR: /var/log/containers/ai-registry
+      APP_LOG_FILE_FORMAT: json
+      APP_LOG_CONSOLE_FORMAT: json
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - /var/lib/platform/apps/registry/servers:/app/registry/servers:ro
+      - /var/lib/platform/apps/registry/models:/app/registry/models:ro
+      - /var/log/containers/ai-registry:/var/log/containers/ai-registry
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      - registry
+    restart: unless-stopped

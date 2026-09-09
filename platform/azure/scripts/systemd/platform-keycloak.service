@@ -1,0 +1,16 @@
+[Unit]
+Description=Run the platform Keycloak container
+After=docker.service platform-keycloak-env.service
+Requires=docker.service platform-keycloak-env.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/platform/compose/keycloak
+ExecStart=/usr/bin/docker compose -f /opt/platform/compose/keycloak/compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /opt/platform/compose/keycloak/compose.yaml down
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
