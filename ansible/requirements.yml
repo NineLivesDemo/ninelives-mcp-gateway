@@ -1,0 +1,5 @@
+---
+collections:
+  - name: community.docker
+  - name: den_is.tools
+    version: 26.8.3

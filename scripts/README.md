@@ -2,6 +2,19 @@
 
 This directory contains utility scripts for building, testing, and deploying MCP Gateway Registry services.
 
+## Terraform private-ingress validation
+
+Run the static guard before reviewing or planning changes to the Azure
+Terraform environment:
+
+```bash
+./scripts/validate-terraform-private-ingress.sh
+```
+
+The guard verifies that the documented `Cloudflare Tunnel -> APISIX ->
+private workload upstream` contract remains present and that private VM and
+application landing-zone compositions do not enable public IP assignment.
+
 ## DocumentDB Initialization Scripts
 
 ### Overview

@@ -1,0 +1,7 @@
+---
+- name: Check private platform host connectivity
+  hosts: "all:!automation"
+  gather_facts: false
+  tasks:
+    - name: Verify SSH and Ansible connectivity
+      ansible.builtin.ping:

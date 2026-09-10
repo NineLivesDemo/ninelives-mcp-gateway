@@ -1,0 +1,36 @@
+---
+- name: Assert supported platform
+  ansible.builtin.assert:
+    that:
+      - ansible_facts["os_family"] == "Debian"
+    fail_msg: "platform_baseline supports Debian-family hosts only"
+
+- name: Install baseline packages
+  become: true
+  ansible.builtin.package:
+    name: "{{ platform_baseline_packages }}"
+    state: present
+
+- name: Create baseline marker directory
+  become: true
+  ansible.builtin.file:
+    path: /etc/platform-baseline
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write baseline marker
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/platform-baseline/managed-by-ansible
+    content: "platform_baseline\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install common CLI search tool
+  ansible.builtin.include_role:
+    name: den_is.tools.ripgrep
+  vars:
+    ripgrep_apt_os_repo: true

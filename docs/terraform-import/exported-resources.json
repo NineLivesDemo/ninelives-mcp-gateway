@@ -1,0 +1,242 @@
+{
+  "source": "platform/",
+  "source_kind": "canonical-no-drift-reference",
+  "subscription_id": "24595c03-870c-4a3e-93b3-51ec93ec246bf",
+  "location": "westus3",
+  "environment": "platform-pilot",
+  "data_policy": "Disposable test-bench data may be recreated.",
+  "resources": [
+    {
+      "name": "rg-network",
+      "type": "Microsoft.Resources/resourceGroups",
+      "role": "network",
+      "dependencies": []
+    },
+    {
+      "name": "vnet-platform-pilot",
+      "type": "Microsoft.Network/virtualNetworks",
+      "role": "private platform network",
+      "address_space": ["10.60.0.0/16"],
+      "dependencies": ["rg-network"],
+      "avm_candidate": "Azure/avm-res-network-virtualnetwork/azurerm"
+    },
+    {
+      "name": "snet-edge",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "edge services",
+      "address_space": ["10.60.1.0/24"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-etcd",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "etcd",
+      "address_space": ["10.60.2.0/27"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-openbao",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "OpenBao",
+      "address_space": ["10.60.3.0/27"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-apps",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "Registry application VM",
+      "address_space": ["10.60.4.0/24"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-keycloak",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "Keycloak VM",
+      "address_space": ["10.60.5.0/24"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-private-endpoints",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "private endpoints",
+      "address_space": ["10.60.20.0/27"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "snet-management",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "approved management access",
+      "address_space": ["10.60.21.0/27"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "AzureBastionSubnet",
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "role": "Azure Bastion",
+      "address_space": ["10.60.22.0/26"],
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "nat-vnet-platform-pilot",
+      "type": "Microsoft.Network/natGateways",
+      "role": "deterministic outbound access",
+      "dependencies": ["vnet-platform-pilot"]
+    },
+    {
+      "name": "bas-vnet-platform-pilot",
+      "type": "Microsoft.Network/bastionHosts",
+      "role": "private break-glass SSH access",
+      "sku": "Standard",
+      "tunneling": true,
+      "dependencies": ["vnet-platform-pilot", "AzureBastionSubnet"]
+    },
+    {
+      "name": "vm-platform-edge",
+      "type": "Microsoft.Compute/virtualMachines",
+      "role": "APISIX and Cloudflare Tunnel edge",
+      "private_ip": "10.60.1.4",
+      "vm_size": "Standard_D2ls_v7",
+      "dependencies": ["snet-edge", "nat-vnet-platform-pilot"],
+      "avm_candidate": "Azure/avm-res-compute-virtualmachine/azurerm"
+    },
+    {
+      "name": "vm-platform-etcd",
+      "type": "Microsoft.Compute/virtualMachines",
+      "role": "private mTLS etcd",
+      "private_ip": "10.60.2.4",
+      "vm_size": "Standard_D2ls_v7",
+      "dependencies": ["snet-etcd", "nat-vnet-platform-pilot"],
+      "avm_candidate": "Azure/avm-res-compute-virtualmachine/azurerm"
+    },
+    {
+      "name": "vm-platform-openbao",
+      "type": "Microsoft.Compute/virtualMachines",
+      "role": "OpenBao Raft and Azure Key Vault auto-unseal",
+      "private_ip": "10.60.3.4",
+      "vm_size": "Standard_D2ls_v7",
+      "dependencies": ["snet-openbao", "nat-vnet-platform-pilot"],
+      "avm_candidate": "Azure/avm-res-compute-virtualmachine/azurerm"
+    },
+    {
+      "name": "vm-platform-apps",
+      "type": "Microsoft.Compute/virtualMachines",
+      "role": "Registry, auth-server, and MCP gateway",
+      "private_ip": "10.60.4.4",
+      "vm_size": "Standard_E2ds_v7",
+      "dependencies": ["snet-apps", "nat-vnet-platform-pilot", "platform-key-vault", "cr4bqvj62ztmxmi"],
+      "avm_candidate": "Azure/avm-res-compute-virtualmachine/azurerm"
+    },
+    {
+      "name": "vm-platform-keycloak",
+      "type": "Microsoft.Compute/virtualMachines",
+      "role": "Keycloak",
+      "private_ip": "10.60.5.4",
+      "vm_size": "Standard_E2ds_v7",
+      "dependencies": ["snet-keycloak", "nat-vnet-platform-pilot", "platform-key-vault", "managed-postgresql"],
+      "avm_candidate": "Azure/avm-res-compute-virtualmachine/azurerm"
+    },
+    {
+      "name": "platform-key-vault",
+      "type": "Microsoft.KeyVault/vaults",
+      "role": "platform secrets and OpenBao unseal key",
+      "rbac": true,
+      "public_network_access": false,
+      "dependencies": ["rg-ops"],
+      "avm_candidate": "Azure/avm-res-keyvault-vault/azurerm"
+    },
+    {
+      "name": "openbao-unseal",
+      "type": "Microsoft.KeyVault/vaults/keys",
+      "role": "OpenBao Azure Key Vault auto-unseal",
+      "dependencies": ["platform-key-vault"],
+      "avm_candidate": "Azure/avm-res-keyvault-vault/azurerm"
+    },
+    {
+      "name": "aa-platform-pilot",
+      "type": "Microsoft.Automation/automationAccounts",
+      "role": "runbook orchestration",
+      "managed_identity": "system-assigned",
+      "dependencies": ["rg-ops"],
+      "avm_candidate": "Azure/avm-res-automation-automationaccount/azurerm"
+    },
+    {
+      "name": "platform-workers",
+      "type": "Microsoft.Automation/automationAccounts/hybridRunbookWorkerGroups",
+      "role": "extension-based Hybrid Worker group",
+      "dependencies": ["aa-platform-pilot"]
+    },
+    {
+      "name": "HybridWorkerExtension",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "role": "HybridV2 worker extension",
+      "handler": "Microsoft.Azure.Automation.HybridWorker/HybridWorkerForLinux",
+      "handler_version": "1.1",
+      "dependencies": ["platform-workers", "vm-platform-edge", "vm-platform-etcd", "vm-platform-openbao", "vm-platform-apps", "vm-platform-keycloak"]
+    },
+    {
+      "name": "operations-storage",
+      "type": "Microsoft.Storage/storageAccounts",
+      "role": "durable runbook locks and audit records",
+      "public_network_access": false,
+      "containers": ["locks", "audit"],
+      "dependencies": ["aa-platform-pilot"]
+    },
+    {
+      "name": "cr4bqvj62ztmxmi",
+      "type": "Microsoft.ContainerRegistry/registries",
+      "role": "immutable application images",
+      "ownership": "Terraform-owned Azure resource; current deployment may be recreated",
+      "dependencies": []
+    },
+    {
+      "name": "managed-postgresql",
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "role": "Keycloak database",
+      "ownership": "existing dependency referenced by Terraform",
+      "dependencies": []
+    },
+    {
+      "name": "external-mongodb",
+      "type": "external",
+      "role": "Registry persistence; MongoDB Atlas M10 cluster",
+      "ownership": "external dependency referenced by Ansible/runtime configuration",
+      "dependencies": []
+    },
+    {
+      "name": "grafana-cloud",
+      "type": "external",
+      "role": "External observability platform",
+      "ownership": "external dependency referenced by runtime telemetry configuration",
+      "dependencies": []
+    },
+    {
+      "name": "cloudflare-tunnel",
+      "type": "cloudflare_zero_trust_tunnel_cloudflared",
+      "role": "public ingress control plane",
+      "ownership": "Terraform Cloudflare provider",
+      "dependencies": ["vm-platform-edge"]
+    }
+  ],
+  "avm_notes": [
+    {
+      "module": "Azure/avm-res-network-virtualnetwork/azurerm",
+      "status": "available",
+      "notes": "Uses parent_id and manages VNet/subnets through nested module inputs. westus3 is not supported for AVM IPAM; use static address_space and address_prefixes."
+    },
+    {
+      "module": "Azure/avm-res-compute-virtualmachine/azurerm",
+      "status": "available",
+      "notes": "Requires network_interfaces and owns NICs/extensions through module inputs. Do not create sibling NIC modules for the same VM."
+    },
+    {
+      "module": "Azure/avm-res-keyvault-vault/azurerm",
+      "status": "available",
+      "notes": "Supports keys, private endpoints, role assignments, and network ACLs. Secret values remain outside Terraform state."
+    },
+    {
+      "module": "Azure/avm-res-automation-automationaccount/azurerm",
+      "status": "available",
+      "notes": "Use for the Automation Account; verify Hybrid Worker child-resource coverage before selecting AzureRM or AzAPI."
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+---
+- name: Converge platform baseline role
+  hosts: all
+  become: true
+  roles:
+    - role: platform_baseline

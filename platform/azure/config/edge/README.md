@@ -7,3 +7,9 @@ APISIX connects to the private etcd endpoint with client mTLS and exposes its da
 Before enabling `platform-edge.service`, create `/etc/platform/config/edge-origin.env` from the example with the private Registry and Keycloak origin addresses, schemes, ports, and public host headers. The bootstrap renderer validates these values, creates both APISIX routes, and writes the protected Compose environment from the Key Vault-synchronized APISIX Admin API key. VM origins use HTTP on port 8080 because TLS terminates at APISIX; the ACA rollback origins use HTTPS on port 443.
 
 The Cloudflare API token is an operator credential for account management and is not required on the edge VM. The existing tunnel token must be seeded separately into the platform Key Vault under `cloudflare-tunnel-token`.
+
+All externally initiated application traffic must traverse the Cloudflare
+Tunnel and APISIX chain. Application and platform workloads must not expose
+alternate public ingress paths or bypass APISIX; workload-to-workload private
+traffic is separate from external ingress and remains governed by the platform
+network and service contracts.

@@ -1,0 +1,26 @@
+---
+- name: Verify platform baseline role
+  hosts: all
+  become: true
+  tasks:
+    - name: Read baseline marker
+      ansible.builtin.slurp:
+        src: /etc/platform-baseline/managed-by-ansible
+      register: baseline_marker
+
+    - name: Assert baseline marker content
+      ansible.builtin.assert:
+        that:
+          - baseline_marker.content | b64decode == "platform_baseline\n"
+
+- name: Verify baseline packages
+  hosts: all
+  tasks:
+    - name: Check curl is installed
+      ansible.builtin.command: curl --version
+      changed_when: false
+
+    - name: Check ripgrep is installed
+      ansible.builtin.command: rg --version
+      changed_when: false
+      register: ripgrep_version

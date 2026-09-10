@@ -1,0 +1,21 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: ubuntu2404
+    image: ubuntu:24.04
+    pre_build_image: true
+    privileged: false
+    command: /usr/bin/tail -f /dev/null
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_ROLES_PATH: ../../roles
+  config_options:
+    defaults:
+      host_key_checking: false
+      interpreter_python: auto_silent
+verifier:
+  name: ansible

@@ -1,0 +1,17 @@
+output "virtual_network_resource_id" {
+  description = "Resource ID of the ingress/platform-services VNet."
+  value       = module.virtual_network.resource_id
+}
+
+output "subnet_resource_ids" {
+  description = "Resource IDs of the ingress/platform-services subnets."
+  value = {
+    for subnet_key, subnet in module.virtual_network.subnets :
+    subnet_key => subnet.resource_id
+  }
+}
+
+output "hub_peering" {
+  description = "The bidirectional peering between the ingress/platform-services VNet and the hub."
+  value       = module.virtual_network.peerings["hub"]
+}

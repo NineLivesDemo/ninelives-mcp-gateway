@@ -1,0 +1,7 @@
+---
+- name: Prepare Molecule container
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install sudo for become-based role tests
+      ansible.builtin.raw: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sudo python3

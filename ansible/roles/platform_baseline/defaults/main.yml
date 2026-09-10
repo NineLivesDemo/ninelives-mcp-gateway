@@ -1,0 +1,4 @@
+---
+platform_baseline_packages:
+  - ca-certificates
+  - curl
