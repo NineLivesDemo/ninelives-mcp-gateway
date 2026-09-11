@@ -6,6 +6,8 @@ __pycache__/
 # Models
 .models/
 
+nohup.out
+
 # C extensions
 *.so
 
