@@ -21,8 +21,10 @@ variable "address_space" {
 variable "subnets" {
   description = "Private subnets for the application landing-zone workload."
   type = map(object({
-    name             = string
-    address_prefixes = list(string)
+    name                   = string
+    address_prefixes       = list(string)
+    network_security_group = optional(object({ id = string }))
+    route_table            = optional(object({ id = string }))
   }))
 }
 

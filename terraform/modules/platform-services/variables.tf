@@ -21,8 +21,11 @@ variable "address_space" {
 variable "subnets" {
   description = "Subnets created in the ingress/platform-services VNet."
   type = map(object({
-    name             = string
-    address_prefixes = list(string)
+    name                   = string
+    address_prefixes       = list(string)
+    nat_gateway            = optional(object({ id = string }))
+    network_security_group = optional(object({ id = string }))
+    route_table            = optional(object({ id = string }))
   }))
 }
 

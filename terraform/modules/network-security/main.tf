@@ -62,16 +62,18 @@ resource "azurerm_route" "custom" {
   next_hop_in_ip_address = each.value.next_hop_in_ip_address
 }
 
-resource "azurerm_subnet_network_security_group_association" "this" {
-  for_each = var.subnets
+removed {
+  from = azurerm_subnet_network_security_group_association.this
 
-  subnet_id                 = each.value.subnet_id
-  network_security_group_id = azurerm_network_security_group.this[each.key].id
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "azurerm_subnet_route_table_association" "this" {
-  for_each = var.subnets
+removed {
+  from = azurerm_subnet_route_table_association.this
 
-  subnet_id      = each.value.subnet_id
-  route_table_id = azurerm_route_table.this[each.key].id
+  lifecycle {
+    destroy = false
+  }
 }

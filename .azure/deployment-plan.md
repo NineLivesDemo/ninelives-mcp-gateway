@@ -29,7 +29,7 @@ Existing edge, etcd, and OpenBao VMs remain separate. The existing MongoDB servi
 | Classification | Development / internal tooling |
 | Scale | Small: under 1,000 users |
 | Budget | Cost-optimized |
-| Subscription | `24595c03-870c-4a3e-93b3-51ec93c246bf` |
+| Subscription | `f1129652-3166-4f34-8d4c-5cf35bffbcdc` |
 | Location | `westus3` |
 | VM size | `Standard_E2ds_v7`; resize path to `Standard_E4ds_v7` |
 | OS | Pinned Ubuntu 24.04 Marketplace image |
@@ -170,7 +170,7 @@ The subscription has `ASC Default` and `Managedops-Policy` initiative assignment
 
 ## 6. Provisioning Limit Checklist
 
-Quota checks were re-run for subscription `24595c03-870c-4a3e-93b3-51ec93c246bf` in
+Quota checks were re-run for subscription `f1129652-3166-4f34-8d4c-5cf35bffbcdc` in
 `westus3` using Azure CLI quota commands. The user separately confirmed
 `Standard_E2ds_v7` availability in `westus3`.
 

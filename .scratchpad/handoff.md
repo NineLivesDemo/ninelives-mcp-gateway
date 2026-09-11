@@ -1,0 +1,3 @@
+The 500 is now fully explained: Nginx’s `/validate` subrequest reaches ACA, but its upstream protocol defaults to **HTTP/1.0**. ACA returns **426 Upgrade Required** before the auth-server application receives the request, so auth-server logs show no validation call. I’m adding `proxy_http_version 1.1` to that subrequest; this is the minimal fix and does not change credentials or ports.
+
+The authenticated request is not reaching `auth-server` at all: direct service calls work, but the public Nginx auth subrequest forwards the entire Cloudflare/APISIX header set and ACA returns 400 before Uvicorn logs a request. I’m narrowing the subrequest to an explicit, required header allowlist, then I’ll redeploy and retest the live endpoin

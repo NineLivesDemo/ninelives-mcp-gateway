@@ -19,7 +19,9 @@ repository-owned compositions:
 - `modules/network-security/` composes explicit inbound NSGs and per-subnet
   route tables for the private VM subnets. Its default route collections are
   empty so Azure system routes remain in effect until a firewall or other
-  controlled next hop is explicitly introduced.
+  controlled next hop is explicitly introduced. The VNet compositions attach
+  those resources and the automation NAT gateway through their subnet inputs,
+  making them the sole owner of subnet associations.
 
 The development environment creates four new lifecycle-scoped resource groups:
 `rg-platform-dev-network`, `rg-platform-dev-services`, `rg-platform-dev-app`,

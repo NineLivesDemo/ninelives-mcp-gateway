@@ -9,9 +9,8 @@ variable "resource_group_name" {
 }
 
 variable "subnets" {
-  description = "Private VM subnets and their explicit inbound policy."
+  description = "Private VM subnet policies and their network resources."
   type = map(object({
-    subnet_id                   = string
     network_security_group_name = string
     route_table_name            = string
     inbound_rules = list(object({

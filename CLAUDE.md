@@ -1662,40 +1662,6 @@ project_root/
 - [ ] Create utility methods
 ```
 
-## Helm Chart Development
-
-The Helm charts under `charts/` have `helm-unittest` suites in each chart's `tests/` directory. The plugin is installed locally (`helm plugin list` shows `unittest`).
-
-### Running the suites
-
-```bash
-# All four charts (subcharts + parent stack)
-helm unittest charts/mcpgw charts/auth-server charts/registry charts/mcp-gateway-registry-stack
-```
-
-For stack-level tests that render via subchart dependencies, run `helm dep update charts/mcp-gateway-registry-stack` after editing any subchart so the packaged `.tgz` files in `charts/mcp-gateway-registry-stack/charts/` pick up your changes.
-
-### Tests are part of the contract
-
-Any change to a Helm chart must keep the unittest suites passing, and new chart functionality must come with new unittest coverage. Things worth testing:
-- New values.yaml fields that affect rendered output (happy path + edge cases).
-- New `fail` guards or validation helpers (assert the failure mode with `failedTemplate: errorPattern: ...`).
-- Changes to `env:` / `envFrom:` ordering, resource refs, or conditional blocks.
-
-Prefer `equal:` over `contains:` when asserting something must appear in a specific position — `contains:` only checks membership and will not catch ordering regressions.
-
-### Keeping index-based and reserved-name assertions in sync
-
-Two places encode assumptions about the current set of chart-managed env vars, and both need updating whenever `env:` entries, `envFrom:` sources, or secret/configmap keys are added, removed, or reordered in a deployment template:
-
-1. **Reserved-name lists in `charts/<subchart>/templates/_helpers.tpl`** (`{{ define "<chart>.reservedEnvNames" }}`). These are the union of every name the chart's deployment can render into `env:` (across all conditional branches) plus every key consumed via `envFrom`. Over-rejection is preferred to under-rejection. If you add a new env var, a new secret key, or wire up a new configmap/secret via `envFrom`, extend the corresponding chart's reserved list. Each helper has a block comment listing the sources it's cross-referenced against — update that comment if the set of sources changes.
-
-2. **Index-based order assertions in the `tests/extra_env_test.yaml` suites** (e.g. `spec.template.spec.containers[0].env[6].name: KEYCLOAK_ADMIN_PASSWORD`). These hardcode the position where chart-managed entries end and user-supplied `extraEnv` entries begin. They come with `NOTE:` comments describing the conditional values they assume (e.g. `global.authProvider.type=keycloak`, `awsRegistry.federationEnabled=false`). If you insert a new conditional block before the `extraEnv` append, update the expected indices — and update the `NOTE:` comment to describe the new assumption.
-
-If you only update one of the two, the unittest suite catches it: a drifting reserved list lets a rejection test fail (the catastrophic key isn't rejected anymore), and drifting order assertions fail the positional tests. Both run in the `unittest` job of `.github/workflows/helm-test.yml` on any PR that touches `charts/**`.
-
-Note: only the unittest suite enforces these invariants — `helm lint`, `helm template`, and `kubeconform` do not. If you add a new env var to a deployment but forget to update the reserved list AND nobody writes an extraEnv test for that name, nothing will detect the gap. Treat the reserved list and the deployment template as a matched pair.
-
 ## Docker Build and Deployment
 
 When building and pushing Docker containers, create a shell script following this pattern:
@@ -1801,24 +1767,6 @@ Always prioritize simplicity and clarity over cleverness.
 
 ## Deployment Surface Customization
 
-### Helm Charts
-
-Helm charts support `extraEnv` for injecting custom environment variables. The reserved names are read from `charts/*/reserved-env-names.txt` files using `.Files.Get` and `splitList` functions.
-
-**Example:**
-```yaml
-extraEnv:
-  - name: MY_CUSTOM_VAR
-    value: "my-value"
-  - name: MY_FLAG
-    value: "true"
-```
-
-**Reserved Names:** The following variables are managed by the deployment and cannot be overridden:
-- `DEPLOYMENT_MODE`, `REGISTRY_MODE`, `SECRET_KEY`, etc.
-
-See `charts/*/reserved-env-names.txt` for the complete list per service.
-
 ### Docker Compose
 
 For Docker Compose deployments, you can inject custom environment variables by creating files in `extra_env/` at the repo root (next to `.env`):
@@ -1844,7 +1792,7 @@ The `env_file:` entries are configured for `registry.env`, `auth-server.env`, an
 
 **Compose version requirement:** The `env_file: [{ path, required }]` object form requires **Docker Compose v2.24 or newer** (Docker Desktop 4.27+) or **Podman Compose v1.0.7+**. Older versions silently ignore the `required` flag and will error out if the referenced file does not exist. Check with `docker compose version` or `podman-compose --version` before deploying.
 
-**Preflight Validation:** Before starting containers, `build_and_run.sh` validates that no environment variable in your extra_env files conflicts with chart-managed reserved names. If a collision is found, deployment fails with a clear error message pointing to the exact line number and file. The validator also warns on malformed lines (missing `=` or empty keys), normalizes names to upper-case before comparing (so `secret_key=foo` is still caught), and logs the per-service custom-variable count at startup. The same validator lives at `scripts/validate-extra-env.sh` and can be run standalone for CI or pre-commit use.
+**Preflight Validation:** Before starting containers, `build_and_run.sh` validates that no environment variable in your extra_env files conflicts with deployment-managed reserved names. If a collision is found, deployment fails with a clear error message pointing to the exact line number and file. The validator also warns on malformed lines (missing `=` or empty keys), normalizes names to upper-case before comparing (so `secret_key=foo` is still caught), and logs the per-service custom-variable count at startup. The same validator lives at `scripts/validate-extra-env.sh` and can be run standalone for CI or pre-commit use.
 
 ### Terraform / ECS
 
