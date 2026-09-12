@@ -1,12 +1,13 @@
 module "connectivity" {
   source = "../connectivity"
 
-  location              = var.location
-  hub_resource_group_id = var.hub_resource_group_id
-  hub_name              = var.hub_name
-  hub_address_space     = var.hub_address_space
-  hub_subnets           = var.hub_subnets
-  tags                  = var.tags
+  location                 = var.location
+  hub_resource_group_id    = var.hub_resource_group_id
+  hub_name                 = var.hub_name
+  hub_address_space        = var.hub_address_space
+  hub_subnets              = var.hub_subnets
+  enable_bastion_tunneling = var.enable_bastion_tunneling
+  tags                     = var.tags
 }
 
 module "ingress_platform_services" {

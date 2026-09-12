@@ -1,0 +1,24 @@
+---
+- name: Verify Semaphore Compose listener contract
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Set controlled automation VM private address
+      ansible.builtin.set_fact:
+        semaphore_expected_bind_address: 10.61.5.4
+
+    - name: Read rendered Semaphore Compose template
+      ansible.builtin.slurp:
+        src: /tmp/semaphore-template-test/docker-compose.yml
+      register: semaphore_compose
+
+    - name: Assert Semaphore binds to the VM private address
+      ansible.builtin.assert:
+        that:
+          - semaphore_expected_bind_address + ':3000:3000' in (semaphore_compose.content | b64decode)
+          - "'127.0.0.1:3000:3000' not in (semaphore_compose.content | b64decode)"
+          - "'image: semaphoreui/runner:v2.19.12' in (semaphore_compose.content | b64decode)"
+          - "'/opt/semaphore/runner-requirements.txt:/etc/semaphore/requirements.txt:ro' in (semaphore_compose.content | b64decode)"
+          - "'/opt/semaphore/runner-known_hosts:/etc/ssh/ssh_known_hosts:ro' in (semaphore_compose.content | b64decode)"
+          - "'ANSIBLE_PRIVATE_KEY_FILE' not in (semaphore_compose.content | b64decode)"
+          - "'runner-ssh' not in (semaphore_compose.content | b64decode)"

@@ -1,0 +1,83 @@
+---
+- name: Create certificate-only Ansible automation account
+  become: true
+  ansible.builtin.user:
+    name: ansible
+    comment: Platform automation account
+    shell: /bin/bash
+    create_home: true
+    password_lock: true
+    groups: []
+    append: false
+
+- name: Secure Ansible automation account SSH directory
+  become: true
+  ansible.builtin.file:
+    path: /home/ansible/.ssh
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0700"
+
+- name: Remove static SSH authorized keys for automation account
+  become: true
+  ansible.builtin.file:
+    path: /home/ansible/.ssh/authorized_keys
+    state: absent
+
+- name: Validate HCP Vault user CA source
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'HCP_VAULT_SSH_CA_FILE', default='') | length > 0
+    fail_msg: Set HCP_VAULT_SSH_CA_FILE to the verified HCP Vault SSH CA public-key file.
+
+- name: Install HCP Vault user CA public key
+  become: true
+  ansible.builtin.copy:
+    src: "{{ lookup('ansible.builtin.env', 'HCP_VAULT_SSH_CA_FILE') }}"
+    dest: /etc/ssh/hcp-vault-user-ca.pub
+    owner: root
+    group: root
+    mode: "0644"
+  register: platform_automation_account_ca_key
+
+- name: Configure HCP Vault user CA trust
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/60-hcp-vault-user-ca.conf
+    content: "TrustedUserCAKeys /etc/ssh/hcp-vault-user-ca.pub\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: platform_automation_account_ca_config
+
+- name: Validate SSH daemon configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - sshd
+      - -t
+  changed_when: false
+
+- name: Reload SSH daemon after CA trust changes
+  become: true
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+  when: platform_automation_account_ca_key.changed or platform_automation_account_ca_config.changed
+
+- name: Verify HCP Vault user CA trust is configured
+  become: true
+  ansible.builtin.command:
+    argv:
+      - sshd
+      - -T
+  register: platform_automation_account_sshd_effective_config
+  changed_when: false
+
+- name: Require HCP Vault user CA trust
+  ansible.builtin.assert:
+    that:
+      - platform_automation_account_sshd_effective_config.stdout is search('trustedusercakeys ')
+      - platform_automation_account_sshd_effective_config.stdout is not search('trustedusercakeys none')
+    fail_msg: SSH certificate authentication is not configured with a trusted user CA.

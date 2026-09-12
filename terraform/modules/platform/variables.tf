@@ -26,6 +26,12 @@ variable "hub_subnets" {
   }))
 }
 
+variable "enable_bastion_tunneling" {
+  description = "Whether Azure Bastion native-client tunneling is enabled."
+  type        = bool
+  default     = false
+}
+
 variable "ingress_resource_group_id" {
   description = "Resource ID of the ingress/platform-services resource group."
   type        = string

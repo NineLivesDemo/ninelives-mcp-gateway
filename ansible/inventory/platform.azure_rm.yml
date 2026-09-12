@@ -1,0 +1,22 @@
+---
+plugin: azure.azcollection.azure_rm
+auth_source: msi
+include_vm_resource_groups:
+  - rg-platform-dev-services
+  - rg-platform-dev-app
+include_host_filters:
+  - tags.environment is defined and tags.environment == 'dev'
+  - tags.managed_by is defined and tags.managed_by == 'terraform'
+  - tags.function is defined
+  - powerstate == 'running'
+  - provisioning_state == 'succeeded'
+hostnames:
+  - name
+hostvar_expressions:
+  ansible_host: private_ipv4_addresses | first
+  ansible_user: "'ansible'"
+keyed_groups:
+  - prefix: function
+    key: tags.function
+    separator: _
+    trailing_separator: false

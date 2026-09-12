@@ -168,6 +168,16 @@ cli/examples/peer-sales-registry.json
 # committed; operators are told to delete them after use.
 .api_key_*.txt
 .m2m_client_secret_*.txt
+
+# Terraform local state, plans, and backend configuration.
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+.terraform/
+backend.hcl
+ansible/inventory/bootstrap.ini
+
 .venv
 env/
 venv/
@@ -403,3 +413,4 @@ site/
 # Local architecture reference artifacts
 docs/enterprise-scale-architecture.pdf
 docs/enterprise-scale-architecture.pdf:Zone.Identifier
+docs/enterprise-scale-architecture

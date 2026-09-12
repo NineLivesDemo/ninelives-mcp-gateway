@@ -1,0 +1,14 @@
+---
+- name: Bootstrap private Semaphore control plane
+  hosts: automation
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Verify bootstrap host has a private default address
+      ansible.builtin.assert:
+        that:
+          - ansible_facts["default_ipv4"]["address"] | length > 0
+        fail_msg: Bootstrap requires facts from the automation VM to determine the private Semaphore listener address.
+  roles:
+    - role: platform_baseline
+    - role: semaphore

@@ -39,6 +39,12 @@ variable "enable_bastion" {
   default     = true
 }
 
+variable "enable_bastion_tunneling" {
+  description = "Whether Azure Bastion native-client tunneling is enabled."
+  type        = bool
+  default     = false
+}
+
 variable "enable_nat_gateway" {
   description = "Whether to create the centralized NAT Gateway capability."
   type        = bool

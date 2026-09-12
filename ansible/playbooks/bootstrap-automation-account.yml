@@ -1,0 +1,7 @@
+---
+- name: Bootstrap certificate-only automation account on service VMs
+  hosts: "all:!automation"
+  become: true
+  gather_facts: true
+  roles:
+    - role: platform_automation_account

@@ -1,0 +1,79 @@
+---
+services:
+  db:
+    image: postgres:{{ semaphore_postgres_version }}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${SEMAPHORE_DB_USER}
+      POSTGRES_PASSWORD: ${SEMAPHORE_DB_PASSWORD}
+      POSTGRES_DB: semaphore
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SEMAPHORE_DB_USER} -d semaphore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  server:
+    image: semaphoreui/semaphore:{{ semaphore_server_version }}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "{{ semaphore_bind_address }}:{{ semaphore_port }}:3000"
+    env_file:
+      - .env
+    environment:
+      SEMAPHORE_DB_DIALECT: postgres
+      SEMAPHORE_DB_HOST: db
+      SEMAPHORE_DB_PORT: 5432
+      SEMAPHORE_DB_USER: ${SEMAPHORE_DB_USER}
+      SEMAPHORE_DB_PASS: ${SEMAPHORE_DB_PASSWORD}
+      SEMAPHORE_DB: semaphore
+      SEMAPHORE_ADMIN_NAME: ${SEMAPHORE_ADMIN_NAME}
+      SEMAPHORE_ADMIN: ${SEMAPHORE_ADMIN_USERNAME}
+      SEMAPHORE_ADMIN_PASSWORD: ${SEMAPHORE_ADMIN_PASSWORD}
+      SEMAPHORE_ADMIN_EMAIL: ${SEMAPHORE_ADMIN_EMAIL}
+      SEMAPHORE_WEB_ROOT: ${SEMAPHORE_BROWSER_URL}
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: ${SEMAPHORE_ACCESS_KEY_ENCRYPTION}
+      SEMAPHORE_COOKIE_HASH: ${SEMAPHORE_COOKIE_HASH}
+      SEMAPHORE_COOKIE_ENCRYPTION: ${SEMAPHORE_COOKIE_ENCRYPTION}
+      SEMAPHORE_USE_REMOTE_RUNNER: "true"
+      SEMAPHORE_RUNNER_REGISTRATION_TOKEN: ${SEMAPHORE_RUNNER_REGISTRATION_TOKEN}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  runner:
+    image: semaphoreui/runner:{{ semaphore_runner_version }}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      SEMAPHORE_WEB_ROOT: http://server:3000
+      SEMAPHORE_RUNNER_API_URL: http://server:3000/internal
+      SEMAPHORE_RUNNER_REGISTRATION_TOKEN: ${SEMAPHORE_RUNNER_REGISTRATION_TOKEN}
+      VAULT_ADDR: ${VAULT_ADDR}
+      VAULT_NAMESPACE: ${VAULT_NAMESPACE}
+      VAULT_SEMAPHORE_SSH_MOUNT: ${VAULT_SEMAPHORE_SSH_MOUNT}
+      VAULT_SEMAPHORE_SSH_ROLE: ${VAULT_SEMAPHORE_SSH_ROLE}
+      VAULT_SEMAPHORE_SSH_ROLE_ID: ${VAULT_SEMAPHORE_SSH_ROLE_ID}
+      VAULT_SEMAPHORE_SSH_SECRET_ID: ${VAULT_SEMAPHORE_SSH_SECRET_ID}
+    volumes:
+      - "{{ semaphore_runner_requirements_path }}:/etc/semaphore/requirements.txt:ro"
+      - "{{ semaphore_runner_known_hosts_path }}:/etc/ssh/ssh_known_hosts:ro"
+
+volumes:
+  postgres:
+  server:

@@ -1,0 +1,135 @@
+---
+- name: Validate required Semaphore bootstrap configuration
+  ansible.builtin.assert:
+    that:
+      - semaphore_vault_url | length > 0
+      - semaphore_vault_namespace | length > 0
+      - semaphore_vault_role_id | length > 0
+      - semaphore_vault_secret_id | length > 0
+      - semaphore_browser_url | length > 0
+      - semaphore_bind_address | length > 0
+      - semaphore_ssh_vault_role_id | length > 0
+      - semaphore_ssh_vault_secret_id | length > 0
+      - semaphore_runner_known_hosts_source_path | length > 0
+    fail_msg: Semaphore bootstrap requires Vault AppRole credentials and explicit browser and bind URLs.
+  no_log: true
+
+- name: Install Semaphore host packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - docker.io
+      - docker-compose-v2
+      - jq
+      - python3-hvac
+    state: present
+    update_cache: true
+
+- name: Read Semaphore runtime secrets from Vault
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ semaphore_vault_url }}"
+    namespace: "{{ semaphore_vault_namespace }}"
+    auth_method: approle
+    role_id: "{{ semaphore_vault_role_id }}"
+    secret_id: "{{ semaphore_vault_secret_id }}"
+    engine_mount_point: "{{ semaphore_vault_mount }}"
+    path: "{{ semaphore_vault_secret_path }}"
+  register: semaphore_vault_response
+  no_log: true
+
+- name: Validate Semaphore runtime secret fields
+  ansible.builtin.assert:
+    that:
+      - semaphore_vault_response.secret.admin_username | length > 0
+      - semaphore_vault_response.secret.admin_password | length > 0
+      - semaphore_vault_response.secret.db_password | length > 0
+      - semaphore_vault_response.secret.access_key_encryption | length > 0
+      - semaphore_vault_response.secret.cookie_hash | length > 0
+      - semaphore_vault_response.secret.cookie_encryption | length > 0
+      - semaphore_vault_response.secret.runner_registration_token | length > 0
+    fail_msg: The Semaphore Vault secret is missing a required runtime field.
+  no_log: true
+
+- name: Enable and start Docker
+  become: true
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Create Semaphore runtime directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ semaphore_path }}"
+      owner: root
+      group: root
+      mode: "0750"
+
+- name: Install Semaphore runner Python requirements
+  become: true
+  ansible.builtin.copy:
+    src: runner-requirements.txt
+    dest: "{{ semaphore_runner_requirements_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Semaphore
+
+- name: Install Semaphore runner known hosts
+  become: true
+  ansible.builtin.copy:
+    src: "{{ semaphore_runner_known_hosts_source_path }}"
+    dest: "{{ semaphore_runner_known_hosts_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Semaphore
+
+- name: Render Semaphore Compose configuration
+  become: true
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ semaphore_path }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  no_log: true
+  notify: Restart Semaphore
+
+- name: Render Semaphore runtime environment
+  become: true
+  ansible.builtin.template:
+    src: semaphore.env.j2
+    dest: "{{ semaphore_path }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart Semaphore
+
+- name: Apply Semaphore Compose stack
+  become: true
+  community.docker.docker_compose_v2:
+    project_src: "{{ semaphore_path }}"
+    state: present
+    pull: always
+    remove_orphans: true
+
+- name: Wait for Semaphore API health
+  ansible.builtin.uri:
+    url: "http://{{ semaphore_bind_address }}:{{ semaphore_port }}/api/ping"
+    return_content: true
+    status_code: 200
+  register: semaphore_health
+  until: semaphore_health.content == 'pong'
+  retries: 18
+  delay: 10
+  changed_when: false

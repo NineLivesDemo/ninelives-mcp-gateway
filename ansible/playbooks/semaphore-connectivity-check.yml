@@ -1,0 +1,43 @@
+---
+- name: Verify private service connectivity with HCP Vault SSH certificates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    semaphore_service_hosts: "{{ groups['all'] | difference(groups['function_automation'] | default([])) }}"
+  tasks:
+    - name: Issue certificate and verify service hosts
+      block:
+        - name: Prepare ephemeral HCP Vault SSH certificate
+          ansible.builtin.include_role:
+            name: semaphore_ssh_certificate
+
+        - name: Add certificate-authenticated service targets
+          ansible.builtin.add_host:
+            name: "{{ item }}"
+            groups: semaphore_service_targets
+            ansible_host: "{{ hostvars[item].ansible_host }}"
+            ansible_user: ansible
+            ansible_ssh_private_key_file: "{{ semaphore_ssh_certificate_private_key_file }}"
+            ansible_ssh_common_args: >-
+              -o CertificateFile={{ semaphore_ssh_certificate_file }}
+              -o UserKnownHostsFile=/etc/ssh/ssh_known_hosts
+              -o StrictHostKeyChecking=yes
+              -o PasswordAuthentication=no
+              -o KbdInteractiveAuthentication=no
+              -o IdentitiesOnly=yes
+          loop: "{{ semaphore_service_hosts }}"
+          changed_when: false
+
+        - name: Verify SSH and Ansible connectivity
+          ansible.builtin.ping:
+          delegate_to: "{{ item }}"
+          loop: "{{ groups['semaphore_service_targets'] | default([]) }}"
+          loop_control:
+            label: "{{ item }}"
+          changed_when: false
+      always:
+        - name: Remove ephemeral HCP Vault SSH certificate
+          ansible.builtin.include_role:
+            name: semaphore_ssh_certificate
+            tasks_from: cleanup

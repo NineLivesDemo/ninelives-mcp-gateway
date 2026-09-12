@@ -1,0 +1,24 @@
+---
+semaphore_path: /opt/semaphore
+semaphore_server_version: v2.19.12
+semaphore_runner_version: v2.19.12
+semaphore_postgres_version: "14.3"
+semaphore_port: 3000
+semaphore_browser_url: http://127.0.0.1:3300
+semaphore_bind_address: "{{ ansible_facts['default_ipv4']['address'] }}"
+semaphore_admin_name: Admin
+semaphore_admin_email: admin@localhost.local
+semaphore_runner_name: semaphore-runner
+semaphore_runner_requirements_path: "{{ semaphore_path }}/runner-requirements.txt"
+semaphore_runner_known_hosts_path: "{{ semaphore_path }}/runner-known_hosts"
+semaphore_runner_known_hosts_source_path: "{{ lookup('ansible.builtin.env', 'SEMAPHORE_RUNNER_KNOWN_HOSTS_FILE', default='') }}"
+semaphore_vault_mount: secret
+semaphore_vault_secret_path: secret/platform-dev/semaphore
+semaphore_vault_url: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR', default='') }}"
+semaphore_vault_namespace: "{{ lookup('ansible.builtin.env', 'VAULT_NAMESPACE', default='') }}"
+semaphore_vault_role_id: "{{ lookup('ansible.builtin.env', 'VAULT_ROLE_ID', default='') }}"
+semaphore_vault_secret_id: "{{ lookup('ansible.builtin.env', 'VAULT_SECRET_ID', default='') }}"
+semaphore_ssh_vault_mount: ssh
+semaphore_ssh_vault_role: semaphore-platform
+semaphore_ssh_vault_role_id: "{{ lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_ROLE_ID', default='') }}"
+semaphore_ssh_vault_secret_id: "{{ lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_SECRET_ID', default='') }}"

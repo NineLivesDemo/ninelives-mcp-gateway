@@ -1,0 +1,62 @@
+---
+- name: Validate HCP Vault SSH signer configuration
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'VAULT_ADDR', default='') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_MOUNT', default='') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_ROLE', default='') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_ROLE_ID', default='') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_SECRET_ID', default='') | length > 0
+    fail_msg: Semaphore requires HCP Vault AppRole credentials to issue a short-lived SSH certificate.
+  no_log: true
+
+- name: Create private Semaphore task workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: semaphore-ssh-
+  register: semaphore_ssh_certificate_workspace
+  no_log: true
+
+- name: Generate ephemeral SSH keypair
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -q
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -f
+      - "{{ semaphore_ssh_certificate_workspace.path }}/id_ed25519"
+  args:
+    creates: "{{ semaphore_ssh_certificate_workspace.path }}/id_ed25519"
+  no_log: true
+
+- name: Request HCP Vault signed SSH certificate
+  ansible.builtin.set_fact:
+    semaphore_ssh_certificate_sign_response: >-
+      {{ lookup(
+        'community.hashi_vault.vault_write',
+        lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_MOUNT') ~
+        '/sign/' ~ lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_ROLE'),
+        auth_method='approle',
+        role_id=lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_ROLE_ID'),
+        secret_id=lookup('ansible.builtin.env', 'VAULT_SEMAPHORE_SSH_SECRET_ID'),
+        url=lookup('ansible.builtin.env', 'VAULT_ADDR'),
+        namespace=lookup('ansible.builtin.env', 'VAULT_NAMESPACE', default=''),
+        data={'public_key': lookup('ansible.builtin.file', semaphore_ssh_certificate_workspace.path ~ '/id_ed25519.pub')}
+      ) }}
+  no_log: true
+
+- name: Write ephemeral SSH certificate
+  ansible.builtin.copy:
+    content: "{{ semaphore_ssh_certificate_sign_response.data.signed_key }}\n"
+    dest: "{{ semaphore_ssh_certificate_workspace.path }}/id_ed25519-cert.pub"
+    mode: "0600"
+  no_log: true
+
+- name: Publish ephemeral SSH connection paths
+  ansible.builtin.set_fact:
+    semaphore_ssh_certificate_private_key_file: "{{ semaphore_ssh_certificate_workspace.path }}/id_ed25519"
+    semaphore_ssh_certificate_file: "{{ semaphore_ssh_certificate_workspace.path }}/id_ed25519-cert.pub"
+  no_log: true

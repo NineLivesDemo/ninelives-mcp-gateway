@@ -1,0 +1,6 @@
+---
+- name: Restart Semaphore
+  become: true
+  community.docker.docker_compose_v2:
+    project_src: "{{ semaphore_path }}"
+    state: restarted

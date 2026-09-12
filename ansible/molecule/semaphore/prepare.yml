@@ -1,0 +1,8 @@
+---
+- name: Prepare Semaphore template test container
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install Python for Ansible modules
+      ansible.builtin.raw: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3
+      changed_when: false

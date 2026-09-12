@@ -36,6 +36,9 @@ module "hub_and_spoke" {
         parent_id     = var.hub_resource_group_id
         subnets       = var.hub_subnets
       }
+      bastion = var.enable_bastion ? {
+        tunneling_enabled = var.enable_bastion_tunneling
+      } : null
       nat_gateway = var.enable_nat_gateway ? {} : null
     }
   }

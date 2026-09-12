@@ -1,0 +1,13 @@
+location                    = "westus3"
+resource_group_name         = "rg-platform-tfstate"
+storage_account_name_prefix = "stplatformtf"
+
+# Add CI or recovery principals here when they are introduced. The operator identity
+# used for bootstrap is granted access automatically.
+additional_state_writer_principal_ids = []
+
+tags = {
+  environment = "dev"
+  managed_by  = "terraform"
+  purpose     = "terraform-state"
+}

@@ -34,3 +34,4 @@
     name: den_is.tools.ripgrep
   vars:
     ripgrep_apt_os_repo: true
+    ripgrep_deploy_completions: false

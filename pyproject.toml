@@ -87,6 +87,10 @@ dev = [
     "freezegun>=1.4.0",
     "hypothesis>=6.100.0",
     "moto[secretsmanager]>=5.0.0",  # mock AWS Secrets Manager for egress vault tests
+    "ansible-core>=2.20",
+    "molecule>=26.8.0",
+    "molecule-plugins[docker]>=26.7.15",
+    "ansible-lint>=26.8.0",
 ]
 docs = [
     # The docs site is a single landing page generated from README.md by

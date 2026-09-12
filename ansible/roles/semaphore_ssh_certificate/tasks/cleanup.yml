@@ -1,0 +1,7 @@
+---
+- name: Remove ephemeral SSH workspace
+  ansible.builtin.file:
+    path: "{{ semaphore_ssh_certificate_workspace.path }}"
+    state: absent
+  when: semaphore_ssh_certificate_workspace is defined
+  no_log: true

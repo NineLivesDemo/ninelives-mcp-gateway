@@ -31,7 +31,7 @@ containers for the replacement environment.
 
 The disposable development environment does not create an Azure DDoS
 Protection Plan. Bastion's public IP is retained as an intentional management
-endpoint, while workload VMs have no public IPs. PostgreSQL public network
+endpoint, while workload VMs have no public IPs. Native-client Bastion tunneling is enabled only to bootstrap the private Semaphore automation VM through the versioned Ansible playbook. PostgreSQL public network
 access and firewall rules are both disabled; access is through its private
 endpoint and private DNS zone.
 
@@ -64,6 +64,9 @@ does not export passwords, Key Vault values, or runtime credentials.
 Runtime RBAC is opt-in and resource-ID driven. Supplying the existing Key Vault
 ID creates per-secret `Key Vault Secrets User` assignments for the application
 and Keycloak identities; supplying the existing ACR ID creates only `AcrPull`
-for the application identity; supplying the OpenBao unseal key ID creates only
-the corresponding crypto-user assignment for platform operations. Leaving
-these IDs unset creates no role assignments.
+for the application identity. Leaving these IDs unset creates no runtime role
+assignments.
+
+## State backend
+
+`bootstrap/tfstate/` is a separate one-time bootstrap root that creates the Azure Blob state backend. It uses Microsoft-managed encryption at rest, a private state container, Entra data-plane RBAC, disabled shared-key access, and Blob recovery controls. `env/dev/` remains the platform root and uses that backend only after `terraform init -migrate-state` succeeds. See [`bootstrap/tfstate/README.md`](bootstrap/tfstate/README.md) for bootstrap and migration operations.
